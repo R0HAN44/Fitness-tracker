@@ -17,6 +17,8 @@ import { DEFAULT_PALETTE_ID, DEFAULT_APPEARANCE, palettes } from '../src/ui/them
 import { initializeDatabase } from '../src/db/init';
 import { loadThemeState, saveThemeState } from '../src/db/queries/settings';
 import { seedExercises } from '../src/db/seed';
+import { seedStarterRoutines } from '../src/db/queries/routines';
+import { requestNotificationPermissions } from '../src/lib/notifications';
 
 // Keep the splash screen visible until we're ready
 SplashScreen.preventAutoHideAsync();
@@ -43,6 +45,12 @@ export default function RootLayout() {
 
         // Seed built-in exercises (idempotent)
         await seedExercises();
+
+        // Seed starter routines: PPL, Upper/Lower, Full Body, 5x5
+        seedStarterRoutines();
+
+        // Request local notification permissions for rest timer
+        requestNotificationPermissions().catch(() => {});
 
         // Load saved theme state
         const savedTheme = loadThemeState();
@@ -101,16 +109,6 @@ function RootNavigator() {
         }}
       >
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="workout/active"
-          options={{ animation: 'slide_from_bottom', gestureEnabled: false }}
-        />
-        <Stack.Screen name="workout/finish" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="workout/[id]" />
-        <Stack.Screen name="exercise/[id]" />
-        <Stack.Screen name="routine/index" />
-        <Stack.Screen name="routine/[id]" />
-        <Stack.Screen name="routine/create" />
         <Stack.Screen name="settings/index" />
         <Stack.Screen name="settings/appearance" options={{ animation: 'slide_from_right' }} />
       </Stack>

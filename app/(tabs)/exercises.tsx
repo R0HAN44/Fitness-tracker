@@ -1,66 +1,129 @@
 /**
- * Exercises tab — exercise library browser.
- * Displays the seeded exercise list with search, filtering by
- * muscle group and equipment. Full UI built in Phase 2.
+ * Exercises tab — comprehensive exercise library browser.
+ * Supports:
+ *   - Search & muscle group filtering
+ *   - Sorting: A-Z, Most Used, Recently Used
+ *   - Create custom exercises
+ *   - Exercise detail screen (About tab) with edit & archive actions
  */
 
-import React, { useEffect, useState, useMemo } from 'react';
-import { View, FlatList, Pressable, TextInput } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, FlatList, Pressable, TextInput, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../src/ui/typography/Text';
-import { createStyles } from '../../src/ui/theme/createStyles';
+import { SegmentedControl } from '../../src/ui/components/SegmentedControl';
+import { ExerciseDetailSheet } from '../../src/ui/workout/ExerciseDetailSheet';
+import { CustomExerciseSheet } from '../../src/ui/workout/CustomExerciseSheet';
 import { useTheme } from '../../src/ui/theme/ThemeProvider';
 import { spacing, radii, fontFamily, typography } from '../../src/ui/theme/tokens';
-import { getDb } from '../../src/db/client';
-import { exercises } from '../../src/db/schema';
-import { isNull } from 'drizzle-orm';
-import { muscleGroupLabels, type MuscleGroup } from '../../src/constants/muscles';
+import {
+  getExercises,
+  archiveExercise,
+  unarchiveExercise,
+  updateExercise,
+  type ExerciseRow,
+  type ExerciseSortOption,
+} from '../../src/db/queries/exercises';
+import { MUSCLE_GROUPS, muscleGroupLabels, type MuscleGroup } from '../../src/constants/muscles';
 import { equipmentLabels, type EquipmentType } from '../../src/constants/equipment';
+import { lightImpact } from '../../src/lib/haptics';
 
-type ExerciseRow = typeof exercises.$inferSelect;
+const SORT_OPTIONS: Array<{ value: ExerciseSortOption; label: string }> = [
+  { value: 'name', label: 'A-Z' },
+  { value: 'most_used', label: 'Most Used' },
+  { value: 'recently_used', label: 'Recent' },
+];
 
 export default function ExercisesScreen() {
-  const styles = useStyles();
   const { theme } = useTheme();
-  const [allExercises, setAllExercises] = useState<ExerciseRow[]>([]);
+
+  const [exercisesList, setExercisesList] = useState<ExerciseRow[]>([]);
   const [search, setSearch] = useState('');
+  const [selectedMuscle, setSelectedMuscle] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<ExerciseSortOption>('name');
+
+  // Sheet states
+  const [selectedExercise, setSelectedExercise] = useState<ExerciseRow | null>(null);
+  const [showDetailSheet, setShowDetailSheet] = useState(false);
+  const [showCustomSheet, setShowCustomSheet] = useState(false);
+  const [exerciseToEdit, setExerciseToEdit] = useState<ExerciseRow | null>(null);
+
+  const reloadExercises = useCallback(() => {
+    const data = getExercises({
+      query: search,
+      muscle: selectedMuscle,
+      sortBy,
+      includeArchived: false,
+    });
+    setExercisesList(data);
+  }, [search, selectedMuscle, sortBy]);
 
   useEffect(() => {
-    const db = getDb();
-    const rows = db
-      .select()
-      .from(exercises)
-      .where(isNull(exercises.deletedAt))
-      .orderBy(exercises.name)
-      .all();
-    setAllExercises(rows);
-  }, []);
+    reloadExercises();
+  }, [reloadExercises]);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return allExercises;
-    const q = search.toLowerCase();
-    return allExercises.filter(
-      (e) =>
-        e.name.toLowerCase().includes(q) ||
-        e.primaryMuscle.toLowerCase().includes(q) ||
-        e.equipment.toLowerCase().includes(q),
-    );
-  }, [allExercises, search]);
+  const handleSelectExercise = (exercise: ExerciseRow) => {
+    lightImpact();
+    setSelectedExercise(exercise);
+    setShowDetailSheet(true);
+  };
+
+  const handleOpenCreateCustom = () => {
+    lightImpact();
+    setExerciseToEdit(null);
+    setShowCustomSheet(true);
+  };
+
+  const handleOpenEditCustom = (exercise: ExerciseRow) => {
+    setExerciseToEdit(exercise);
+    setShowCustomSheet(true);
+  };
+
+  const handleToggleArchive = (exercise: ExerciseRow) => {
+    if (exercise.deletedAt) {
+      unarchiveExercise(exercise.id);
+    } else {
+      archiveExercise(exercise.id);
+    }
+    reloadExercises();
+  };
+
+  const handleRestSecondsChange = (exerciseId: string, seconds: number) => {
+    updateExercise(exerciseId, { defaultRestSeconds: seconds });
+    reloadExercises();
+  };
 
   const renderExercise = ({ item }: { item: ExerciseRow }) => (
     <Pressable
+      onPress={() => handleSelectExercise(item)}
       style={({ pressed }) => [
         styles.exerciseRow,
-        pressed && styles.exerciseRowPressed,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.border,
+          opacity: pressed ? 0.8 : 1,
+        },
       ]}
       accessibilityRole="button"
       accessibilityLabel={item.name}
     >
       <View style={styles.exerciseInfo}>
-        <Text variant="body">{item.name}</Text>
+        <View style={styles.nameRow}>
+          <Text variant="body" style={{ fontWeight: '600' }}>
+            {item.name}
+          </Text>
+          {item.isCustom && (
+            <View style={[styles.customBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent }]}>
+              <Text variant="caption" style={{ color: theme.accent, fontSize: 10, fontWeight: '700' }}>
+                CUSTOM
+              </Text>
+            </View>
+          )}
+        </View>
         <Text variant="caption" color="textMuted">
-          {muscleGroupLabels[item.primaryMuscle as MuscleGroup]} · {equipmentLabels[item.equipment as EquipmentType]}
+          {muscleGroupLabels[item.primaryMuscle as MuscleGroup] ?? item.primaryMuscle} ·{' '}
+          {equipmentLabels[item.equipment as EquipmentType] ?? item.equipment}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
@@ -68,95 +131,234 @@ export default function ExercisesScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text variant="displaySm">Exercises</Text>
-        <Text variant="bodySm" color="textMuted" style={styles.count}>
-          {filtered.length} exercises
-        </Text>
+        <View style={styles.headerTop}>
+          <View>
+            <Text variant="displaySm">Exercises</Text>
+            <Text variant="bodySm" color="textMuted">
+              {exercisesList.length} exercises
+            </Text>
+          </View>
+          <Pressable
+            onPress={handleOpenCreateCustom}
+            style={[styles.createBtn, { backgroundColor: theme.accent }]}
+            hitSlop={8}
+          >
+            <Ionicons name="add" size={20} color={theme.onAccent} />
+            <Text variant="bodySm" style={{ color: theme.onAccent, fontWeight: '700', marginLeft: 4 }}>
+              Custom
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Sort Segmented Control */}
+        <View style={styles.sortContainer}>
+          <SegmentedControl
+            options={SORT_OPTIONS}
+            value={sortBy}
+            onChange={(val) => setSortBy(val as ExerciseSortOption)}
+          />
+        </View>
+
+        {/* Search Input */}
+        <View style={[styles.searchContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Ionicons name="search" size={18} color={theme.textMuted} style={styles.searchIcon} />
+          <TextInput
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder="Search exercises or muscles..."
+            placeholderTextColor={theme.textMuted}
+            value={search}
+            onChangeText={setSearch}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+          {search ? (
+            <Pressable onPress={() => setSearch('')} hitSlop={6}>
+              <Ionicons name="close-circle" size={18} color={theme.textMuted} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        {/* Muscle group filter chips */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+          <Pressable
+            onPress={() => setSelectedMuscle('all')}
+            style={[
+              styles.filterChip,
+              {
+                backgroundColor: selectedMuscle === 'all' ? theme.accent : theme.surface,
+                borderColor: selectedMuscle === 'all' ? theme.accent : theme.border,
+              },
+            ]}
+          >
+            <Text
+              variant="caption"
+              style={{
+                color: selectedMuscle === 'all' ? theme.onAccent : theme.text,
+                fontWeight: selectedMuscle === 'all' ? '700' : '500',
+              }}
+            >
+              All Muscles
+            </Text>
+          </Pressable>
+          {MUSCLE_GROUPS.map((m) => {
+            const isSelected = selectedMuscle === m;
+            return (
+              <Pressable
+                key={m}
+                onPress={() => setSelectedMuscle(m)}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: isSelected ? theme.accent : theme.surface,
+                    borderColor: isSelected ? theme.accent : theme.border,
+                  },
+                ]}
+              >
+                <Text
+                  variant="caption"
+                  style={{
+                    color: isSelected ? theme.onAccent : theme.text,
+                    fontWeight: isSelected ? '700' : '500',
+                  }}
+                >
+                  {muscleGroupLabels[m]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={18} color={theme.textMuted} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search exercises..."
-          placeholderTextColor={theme.textMuted}
-          value={search}
-          onChangeText={setSearch}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-          accessibilityLabel="Search exercises"
-        />
-      </View>
-
+      {/* Exercises List */}
       <FlatList
-        data={filtered}
+        data={exercisesList}
         keyExtractor={(item) => item.id}
         renderItem={renderExercise}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         initialNumToRender={20}
         maxToRenderPerBatch={20}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Ionicons name="search-outline" size={36} color={theme.textMuted} />
+            <Text variant="body" color="textMuted" style={{ marginTop: 8 }}>
+              No exercises found
+            </Text>
+          </View>
+        }
+      />
+
+      {/* Detail Sheet */}
+      <ExerciseDetailSheet
+        exercise={selectedExercise}
+        visible={showDetailSheet}
+        onClose={() => setShowDetailSheet(false)}
+        onEdit={handleOpenEditCustom}
+        onArchiveToggle={handleToggleArchive}
+        onRestSecondsChange={handleRestSecondsChange}
+      />
+
+      {/* Custom Exercise Sheet */}
+      <CustomExerciseSheet
+        visible={showCustomSheet}
+        onClose={() => setShowCustomSheet(false)}
+        exerciseToEdit={exerciseToEdit}
+        onSave={(saved) => {
+          reloadExercises();
+          setSelectedExercise(saved);
+        }}
       />
     </SafeAreaView>
   );
 }
 
-const useStyles = createStyles((theme) => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.background,
   },
   header: {
     paddingHorizontal: spacing.base,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.sm,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+    gap: spacing.sm,
   },
-  count: {
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  createBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+  },
+  sortContainer: {
     marginTop: spacing.xs,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.surface,
     borderRadius: radii.md,
-    marginHorizontal: spacing.base,
-    marginBottom: spacing.base,
     paddingHorizontal: spacing.md,
     borderWidth: 1,
-    borderColor: theme.border,
   },
   searchIcon: {
     marginRight: spacing.sm,
   },
   searchInput: {
     flex: 1,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     fontFamily: fontFamily.regular,
     fontSize: typography.body.fontSize,
-    color: theme.text,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  filterChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radii.full,
+    borderWidth: 1,
   },
   list: {
     paddingHorizontal: spacing.base,
+    paddingTop: spacing.xs,
     paddingBottom: spacing['5xl'],
   },
   exerciseRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.surface,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     borderRadius: radii.md,
-    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: theme.border,
-  },
-  exerciseRowPressed: {
-    backgroundColor: theme.elevated,
+    marginBottom: spacing.xs,
   },
   exerciseInfo: {
     flex: 1,
     gap: 2,
   },
-}));
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  customBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+  },
+  emptyContainer: {
+    paddingVertical: spacing['4xl'],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
