@@ -1,37 +1,46 @@
 /**
- * Exercise seed data — 300+ built-in exercises.
+ * Exercise seed data — 400+ built-in exercises.
  *
  * Each exercise has a deterministic UUID derived from its slug for
- * stable IDs across seed updates. Names and descriptions are original.
- *
- * Exercise types:
- *   weight_reps, bodyweight_reps, weighted_bodyweight,
- *   assisted_bodyweight, duration, distance_duration, weight_duration
+ * stable IDs across seed updates. Includes movementType (compound/isolation),
+ * step-by-step instructions, and common mistakes cues.
  */
 
 import { getDb } from './client';
 import { exercises } from './schema';
 import { deterministicId, now } from '../lib/uuid';
 import { eq } from 'drizzle-orm';
+import { ALL_EXERCISE_SEEDS } from '../data/exerciseDefinitions';
+import {
+  determineMovementType,
+  getExerciseInstructions,
+  getExerciseCommonMistakes,
+} from '../data/exerciseContent';
 
-interface ExerciseSeed {
-  slug: string;
-  name: string;
-  primaryMuscle: string;
-  secondaryMuscles: string[];
-  equipment: string;
-  exerciseType: string;
-}
+export { ALL_EXERCISE_SEEDS as EXERCISE_SEEDS };
 
-/** Seed all built-in exercises. Idempotent — upserts by slug. */
+/** Seed all built-in exercises. Idempotent — upserts by slug and backfills missing metadata. */
 export async function seedExercises(): Promise<void> {
   const db = getDb();
   const timestamp = now();
 
-  for (const ex of EXERCISE_SEEDS) {
+  for (const ex of ALL_EXERCISE_SEEDS) {
     const id = deterministicId(ex.slug);
+    const movementType = determineMovementType(ex.slug, ex.name, ex.primaryMuscle, ex.exerciseType);
+    const instructions = JSON.stringify(
+      getExerciseInstructions(ex.slug, ex.name, ex.primaryMuscle, ex.equipment, ex.exerciseType),
+    );
+    const commonMistakes = JSON.stringify(
+      getExerciseCommonMistakes(ex.slug, ex.name, ex.primaryMuscle, ex.equipment),
+    );
+
     const existing = db
-      .select({ id: exercises.id })
+      .select({
+        id: exercises.id,
+        movementType: exercises.movementType,
+        instructions: exercises.instructions,
+        commonMistakes: exercises.commonMistakes,
+      })
       .from(exercises)
       .where(eq(exercises.slug, ex.slug))
       .get();
@@ -46,372 +55,25 @@ export async function seedExercises(): Promise<void> {
           secondaryMuscles: JSON.stringify(ex.secondaryMuscles),
           equipment: ex.equipment,
           exerciseType: ex.exerciseType,
+          movementType,
+          instructions,
+          commonMistakes,
           isCustom: false,
           createdAt: timestamp,
           updatedAt: timestamp,
         })
         .run();
+    } else if (!existing.movementType || !existing.instructions || !existing.commonMistakes) {
+      // Backfill missing content fields for existing database rows
+      db.update(exercises)
+        .set({
+          movementType: existing.movementType ?? movementType,
+          instructions: existing.instructions ?? instructions,
+          commonMistakes: existing.commonMistakes ?? commonMistakes,
+          updatedAt: timestamp,
+        })
+        .where(eq(exercises.id, existing.id))
+        .run();
     }
   }
 }
-
-// ────────────────────────────────────────────────────────────────────
-// Exercise data (300+ exercises)
-// ────────────────────────────────────────────────────────────────────
-
-const EXERCISE_SEEDS: ExerciseSeed[] = [
-  // ── CHEST ─────────────────────────────────────────────────────
-  { slug: 'barbell-flat-bench-press', name: 'Barbell Bench Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-incline-bench-press', name: 'Incline Barbell Bench Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-decline-bench-press', name: 'Decline Barbell Bench Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-close-grip-bench-press', name: 'Close-Grip Bench Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-floor-press', name: 'Barbell Floor Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-flat-bench-press', name: 'Dumbbell Bench Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-incline-bench-press', name: 'Incline Dumbbell Bench Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-decline-bench-press', name: 'Decline Dumbbell Bench Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-flat-fly', name: 'Dumbbell Fly', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-incline-fly', name: 'Incline Dumbbell Fly', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-decline-fly', name: 'Decline Dumbbell Fly', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-pullover', name: 'Dumbbell Pullover', primaryMuscle: 'chest', secondaryMuscles: ['back', 'triceps'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-squeeze-press', name: 'Dumbbell Squeeze Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-crossover', name: 'Cable Crossover', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-low-to-high-fly', name: 'Low-to-High Cable Fly', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-high-to-low-fly', name: 'High-to-Low Cable Fly', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'machine-chest-press', name: 'Machine Chest Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-incline-chest-press', name: 'Machine Incline Chest Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-pec-deck', name: 'Pec Deck Machine', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'push-up', name: 'Push-Up', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders', 'abs'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'diamond-push-up', name: 'Diamond Push-Up', primaryMuscle: 'chest', secondaryMuscles: ['triceps'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'decline-push-up', name: 'Decline Push-Up', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'wide-push-up', name: 'Wide Push-Up', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'dip-chest', name: 'Chest Dip', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'weighted-dip-chest', name: 'Weighted Chest Dip', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'bodyweight', exerciseType: 'weighted_bodyweight' },
-  { slug: 'band-chest-fly', name: 'Resistance Band Chest Fly', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'band', exerciseType: 'weight_reps' },
-  { slug: 'svend-press', name: 'Svend Press', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'other', exerciseType: 'weight_reps' },
-
-  // ── BACK ──────────────────────────────────────────────────────
-  { slug: 'barbell-deadlift', name: 'Deadlift', primaryMuscle: 'back', secondaryMuscles: ['hamstrings', 'glutes', 'forearms'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-sumo-deadlift', name: 'Sumo Deadlift', primaryMuscle: 'back', secondaryMuscles: ['hamstrings', 'glutes', 'quads'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-romanian-deadlift', name: 'Romanian Deadlift', primaryMuscle: 'back', secondaryMuscles: ['hamstrings', 'glutes'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-rack-pull', name: 'Rack Pull', primaryMuscle: 'back', secondaryMuscles: ['hamstrings', 'forearms'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-bent-over-row', name: 'Barbell Row', primaryMuscle: 'back', secondaryMuscles: ['biceps', 'shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-pendlay-row', name: 'Pendlay Row', primaryMuscle: 'back', secondaryMuscles: ['biceps', 'shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-t-bar-row', name: 'T-Bar Row', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-one-arm-row', name: 'One-Arm Dumbbell Row', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-bent-over-row', name: 'Dumbbell Bent-Over Row', primaryMuscle: 'back', secondaryMuscles: ['biceps', 'shoulders'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-seal-row', name: 'Dumbbell Seal Row', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-romanian-deadlift', name: 'Dumbbell Romanian Deadlift', primaryMuscle: 'back', secondaryMuscles: ['hamstrings', 'glutes'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-seated-row', name: 'Seated Cable Row', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-one-arm-row', name: 'Single-Arm Cable Row', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-face-pull', name: 'Face Pull', primaryMuscle: 'back', secondaryMuscles: ['shoulders'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-straight-arm-pulldown', name: 'Straight-Arm Pulldown', primaryMuscle: 'back', secondaryMuscles: ['triceps'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-lat-pulldown', name: 'Lat Pulldown', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-close-grip-pulldown', name: 'Close-Grip Lat Pulldown', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-wide-grip-pulldown', name: 'Wide-Grip Lat Pulldown', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-behind-neck-pulldown', name: 'Behind-Neck Pulldown', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'machine-seated-row', name: 'Machine Row', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-chest-supported-row', name: 'Chest-Supported Machine Row', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'pull-up', name: 'Pull-Up', primaryMuscle: 'back', secondaryMuscles: ['biceps', 'forearms'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'chin-up', name: 'Chin-Up', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'neutral-grip-pull-up', name: 'Neutral-Grip Pull-Up', primaryMuscle: 'back', secondaryMuscles: ['biceps', 'forearms'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'weighted-pull-up', name: 'Weighted Pull-Up', primaryMuscle: 'back', secondaryMuscles: ['biceps', 'forearms'], equipment: 'bodyweight', exerciseType: 'weighted_bodyweight' },
-  { slug: 'weighted-chin-up', name: 'Weighted Chin-Up', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'bodyweight', exerciseType: 'weighted_bodyweight' },
-  { slug: 'assisted-pull-up', name: 'Assisted Pull-Up', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'machine', exerciseType: 'assisted_bodyweight' },
-  { slug: 'assisted-chin-up', name: 'Assisted Chin-Up', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'machine', exerciseType: 'assisted_bodyweight' },
-  { slug: 'inverted-row', name: 'Inverted Row', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'kettlebell-swing', name: 'Kettlebell Swing', primaryMuscle: 'back', secondaryMuscles: ['hamstrings', 'glutes', 'shoulders'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-  { slug: 'kettlebell-single-arm-row', name: 'Kettlebell Single-Arm Row', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-shrug', name: 'Barbell Shrug', primaryMuscle: 'back', secondaryMuscles: ['shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-shrug', name: 'Dumbbell Shrug', primaryMuscle: 'back', secondaryMuscles: ['shoulders'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'back-extension', name: 'Back Extension', primaryMuscle: 'back', secondaryMuscles: ['hamstrings', 'glutes'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'hyperextension', name: 'Hyperextension', primaryMuscle: 'back', secondaryMuscles: ['hamstrings', 'glutes'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-
-  // ── SHOULDERS ─────────────────────────────────────────────────
-  { slug: 'barbell-overhead-press', name: 'Overhead Press', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-push-press', name: 'Push Press', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps', 'quads'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-behind-neck-press', name: 'Behind-the-Neck Press', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-upright-row', name: 'Barbell Upright Row', primaryMuscle: 'shoulders', secondaryMuscles: ['biceps', 'back'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-shoulder-press', name: 'Dumbbell Shoulder Press', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-arnold-press', name: 'Arnold Press', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-lateral-raise', name: 'Lateral Raise', primaryMuscle: 'shoulders', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-front-raise', name: 'Front Raise', primaryMuscle: 'shoulders', secondaryMuscles: ['chest'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-rear-delt-fly', name: 'Rear Delt Fly', primaryMuscle: 'shoulders', secondaryMuscles: ['back'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-w-raise', name: 'W Raise', primaryMuscle: 'shoulders', secondaryMuscles: ['back'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-y-raise', name: 'Y Raise', primaryMuscle: 'shoulders', secondaryMuscles: ['back'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-lu-raise', name: 'Lu Raise', primaryMuscle: 'shoulders', secondaryMuscles: ['back'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-lateral-raise', name: 'Cable Lateral Raise', primaryMuscle: 'shoulders', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-front-raise', name: 'Cable Front Raise', primaryMuscle: 'shoulders', secondaryMuscles: ['chest'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-rear-delt-fly', name: 'Cable Rear Delt Fly', primaryMuscle: 'shoulders', secondaryMuscles: ['back'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-upright-row', name: 'Cable Upright Row', primaryMuscle: 'shoulders', secondaryMuscles: ['biceps'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'machine-shoulder-press', name: 'Machine Shoulder Press', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-lateral-raise', name: 'Machine Lateral Raise', primaryMuscle: 'shoulders', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-reverse-fly', name: 'Machine Reverse Fly', primaryMuscle: 'shoulders', secondaryMuscles: ['back'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'band-pull-apart', name: 'Band Pull-Apart', primaryMuscle: 'shoulders', secondaryMuscles: ['back'], equipment: 'band', exerciseType: 'weight_reps' },
-  { slug: 'pike-push-up', name: 'Pike Push-Up', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'handstand-push-up', name: 'Handstand Push-Up', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'kettlebell-press', name: 'Kettlebell Press', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-  { slug: 'plate-front-raise', name: 'Plate Front Raise', primaryMuscle: 'shoulders', secondaryMuscles: ['chest'], equipment: 'other', exerciseType: 'weight_reps' },
-
-  // ── BICEPS ────────────────────────────────────────────────────
-  { slug: 'barbell-curl', name: 'Barbell Curl', primaryMuscle: 'biceps', secondaryMuscles: ['forearms'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-ez-curl', name: 'EZ-Bar Curl', primaryMuscle: 'biceps', secondaryMuscles: ['forearms'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-preacher-curl', name: 'Barbell Preacher Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-drag-curl', name: 'Barbell Drag Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-reverse-curl', name: 'Barbell Reverse Curl', primaryMuscle: 'biceps', secondaryMuscles: ['forearms'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-curl', name: 'Dumbbell Curl', primaryMuscle: 'biceps', secondaryMuscles: ['forearms'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-hammer-curl', name: 'Hammer Curl', primaryMuscle: 'biceps', secondaryMuscles: ['forearms'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-incline-curl', name: 'Incline Dumbbell Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-concentration-curl', name: 'Concentration Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-preacher-curl', name: 'Dumbbell Preacher Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-spider-curl', name: 'Spider Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-zottman-curl', name: 'Zottman Curl', primaryMuscle: 'biceps', secondaryMuscles: ['forearms'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-curl', name: 'Cable Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-hammer-curl', name: 'Cable Rope Hammer Curl', primaryMuscle: 'biceps', secondaryMuscles: ['forearms'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-bayesian-curl', name: 'Bayesian Cable Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'machine-preacher-curl', name: 'Machine Preacher Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'band-curl', name: 'Resistance Band Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'band', exerciseType: 'weight_reps' },
-
-  // ── TRICEPS ───────────────────────────────────────────────────
-  { slug: 'barbell-skull-crusher', name: 'Skull Crusher', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-jm-press', name: 'JM Press', primaryMuscle: 'triceps', secondaryMuscles: ['chest'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-overhead-tricep-ext', name: 'Dumbbell Overhead Tricep Extension', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-kickback', name: 'Tricep Kickback', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-skull-crusher', name: 'Dumbbell Skull Crusher', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-pushdown', name: 'Cable Pushdown', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-rope-pushdown', name: 'Cable Rope Pushdown', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-overhead-tricep-ext', name: 'Cable Overhead Tricep Extension', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-single-arm-pushdown', name: 'Single-Arm Cable Pushdown', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'machine-dip', name: 'Machine Dip', primaryMuscle: 'triceps', secondaryMuscles: ['chest'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'dip-tricep', name: 'Tricep Dip', primaryMuscle: 'triceps', secondaryMuscles: ['chest', 'shoulders'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'weighted-dip-tricep', name: 'Weighted Tricep Dip', primaryMuscle: 'triceps', secondaryMuscles: ['chest', 'shoulders'], equipment: 'bodyweight', exerciseType: 'weighted_bodyweight' },
-  { slug: 'bench-dip', name: 'Bench Dip', primaryMuscle: 'triceps', secondaryMuscles: ['chest'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'bodyweight-skull-crusher', name: 'Bodyweight Skull Crusher', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-
-  // ── FOREARMS ──────────────────────────────────────────────────
-  { slug: 'barbell-wrist-curl', name: 'Barbell Wrist Curl', primaryMuscle: 'forearms', secondaryMuscles: [], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-reverse-wrist-curl', name: 'Barbell Reverse Wrist Curl', primaryMuscle: 'forearms', secondaryMuscles: [], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-wrist-curl', name: 'Dumbbell Wrist Curl', primaryMuscle: 'forearms', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'farmer-walk', name: "Farmer's Walk", primaryMuscle: 'forearms', secondaryMuscles: ['back', 'shoulders'], equipment: 'dumbbell', exerciseType: 'weight_duration' },
-  { slug: 'dead-hang', name: 'Dead Hang', primaryMuscle: 'forearms', secondaryMuscles: ['back'], equipment: 'bodyweight', exerciseType: 'duration' },
-  { slug: 'plate-pinch-hold', name: 'Plate Pinch Hold', primaryMuscle: 'forearms', secondaryMuscles: [], equipment: 'other', exerciseType: 'weight_duration' },
-  { slug: 'behind-back-wrist-curl', name: 'Behind-the-Back Wrist Curl', primaryMuscle: 'forearms', secondaryMuscles: [], equipment: 'barbell', exerciseType: 'weight_reps' },
-
-  // ── QUADS ─────────────────────────────────────────────────────
-  { slug: 'barbell-back-squat', name: 'Barbell Back Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'hamstrings', 'abs'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-front-squat', name: 'Front Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'abs'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-hack-squat', name: 'Barbell Hack Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-pause-squat', name: 'Pause Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'hamstrings'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-lunge', name: 'Barbell Lunge', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'hamstrings'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-goblet-squat', name: 'Goblet Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-lunge', name: 'Dumbbell Lunge', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'hamstrings'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-walking-lunge', name: 'Dumbbell Walking Lunge', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'hamstrings'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-bulgarian-split-squat', name: 'Bulgarian Split Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-step-up', name: 'Dumbbell Step-Up', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'machine-leg-press', name: 'Leg Press', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'hamstrings'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-hack-squat', name: 'Hack Squat Machine', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-leg-extension', name: 'Leg Extension', primaryMuscle: 'quads', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-smith-squat', name: 'Smith Machine Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'hamstrings'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-pendulum-squat', name: 'Pendulum Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-v-squat', name: 'V-Squat Machine', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-belt-squat', name: 'Belt Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'bodyweight-squat', name: 'Bodyweight Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'bodyweight-lunge', name: 'Bodyweight Lunge', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'jump-squat', name: 'Jump Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'calves'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'pistol-squat', name: 'Pistol Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'wall-sit', name: 'Wall Sit', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'bodyweight', exerciseType: 'duration' },
-  { slug: 'sissy-squat', name: 'Sissy Squat', primaryMuscle: 'quads', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'kettlebell-goblet-squat', name: 'Kettlebell Goblet Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-
-  // ── HAMSTRINGS ────────────────────────────────────────────────
-  { slug: 'machine-lying-leg-curl', name: 'Lying Leg Curl', primaryMuscle: 'hamstrings', secondaryMuscles: ['calves'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-seated-leg-curl', name: 'Seated Leg Curl', primaryMuscle: 'hamstrings', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-standing-leg-curl', name: 'Standing Leg Curl', primaryMuscle: 'hamstrings', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'barbell-stiff-leg-deadlift', name: 'Stiff-Leg Deadlift', primaryMuscle: 'hamstrings', secondaryMuscles: ['back', 'glutes'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-good-morning', name: 'Good Morning', primaryMuscle: 'hamstrings', secondaryMuscles: ['back', 'glutes'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-stiff-leg-deadlift', name: 'Dumbbell Stiff-Leg Deadlift', primaryMuscle: 'hamstrings', secondaryMuscles: ['back', 'glutes'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-single-leg-rdl', name: 'Single-Leg Romanian Deadlift', primaryMuscle: 'hamstrings', secondaryMuscles: ['glutes', 'back'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'nordic-hamstring-curl', name: 'Nordic Hamstring Curl', primaryMuscle: 'hamstrings', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'glute-ham-raise', name: 'Glute-Ham Raise', primaryMuscle: 'hamstrings', secondaryMuscles: ['glutes'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'stability-ball-hamstring-curl', name: 'Stability Ball Hamstring Curl', primaryMuscle: 'hamstrings', secondaryMuscles: ['glutes'], equipment: 'other', exerciseType: 'bodyweight_reps' },
-  { slug: 'cable-pull-through', name: 'Cable Pull-Through', primaryMuscle: 'hamstrings', secondaryMuscles: ['glutes'], equipment: 'cable', exerciseType: 'weight_reps' },
-
-  // ── GLUTES ────────────────────────────────────────────────────
-  { slug: 'barbell-hip-thrust', name: 'Barbell Hip Thrust', primaryMuscle: 'glutes', secondaryMuscles: ['hamstrings'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-glute-bridge', name: 'Barbell Glute Bridge', primaryMuscle: 'glutes', secondaryMuscles: ['hamstrings'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-hip-thrust', name: 'Dumbbell Hip Thrust', primaryMuscle: 'glutes', secondaryMuscles: ['hamstrings'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'machine-hip-thrust', name: 'Machine Hip Thrust', primaryMuscle: 'glutes', secondaryMuscles: ['hamstrings'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'cable-hip-abduction', name: 'Cable Hip Abduction', primaryMuscle: 'glutes', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-kickback', name: 'Cable Glute Kickback', primaryMuscle: 'glutes', secondaryMuscles: ['hamstrings'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'machine-hip-abduction', name: 'Hip Abduction Machine', primaryMuscle: 'glutes', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-hip-adduction', name: 'Hip Adduction Machine', primaryMuscle: 'glutes', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'bodyweight-glute-bridge', name: 'Glute Bridge', primaryMuscle: 'glutes', secondaryMuscles: ['hamstrings'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'bodyweight-single-leg-bridge', name: 'Single-Leg Glute Bridge', primaryMuscle: 'glutes', secondaryMuscles: ['hamstrings'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'banded-clamshell', name: 'Banded Clamshell', primaryMuscle: 'glutes', secondaryMuscles: [], equipment: 'band', exerciseType: 'weight_reps' },
-  { slug: 'banded-lateral-walk', name: 'Banded Lateral Walk', primaryMuscle: 'glutes', secondaryMuscles: [], equipment: 'band', exerciseType: 'weight_reps' },
-  { slug: 'donkey-kick', name: 'Donkey Kick', primaryMuscle: 'glutes', secondaryMuscles: ['hamstrings'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'fire-hydrant', name: 'Fire Hydrant', primaryMuscle: 'glutes', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'kettlebell-deadlift', name: 'Kettlebell Deadlift', primaryMuscle: 'glutes', secondaryMuscles: ['hamstrings', 'back'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-
-  // ── CALVES ────────────────────────────────────────────────────
-  { slug: 'machine-standing-calf-raise', name: 'Standing Calf Raise (Machine)', primaryMuscle: 'calves', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-seated-calf-raise', name: 'Seated Calf Raise', primaryMuscle: 'calves', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'leg-press-calf-raise', name: 'Leg Press Calf Raise', primaryMuscle: 'calves', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'barbell-calf-raise', name: 'Barbell Calf Raise', primaryMuscle: 'calves', secondaryMuscles: [], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-calf-raise', name: 'Dumbbell Calf Raise', primaryMuscle: 'calves', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'smith-machine-calf-raise', name: 'Smith Machine Calf Raise', primaryMuscle: 'calves', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'bodyweight-calf-raise', name: 'Bodyweight Calf Raise', primaryMuscle: 'calves', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'single-leg-calf-raise', name: 'Single-Leg Calf Raise', primaryMuscle: 'calves', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'donkey-calf-raise', name: 'Donkey Calf Raise', primaryMuscle: 'calves', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-
-  // ── ABS ───────────────────────────────────────────────────────
-  { slug: 'crunch', name: 'Crunch', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'bicycle-crunch', name: 'Bicycle Crunch', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'reverse-crunch', name: 'Reverse Crunch', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'sit-up', name: 'Sit-Up', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'v-up', name: 'V-Up', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'leg-raise', name: 'Leg Raise', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'hanging-leg-raise', name: 'Hanging Leg Raise', primaryMuscle: 'abs', secondaryMuscles: ['forearms'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'hanging-knee-raise', name: 'Hanging Knee Raise', primaryMuscle: 'abs', secondaryMuscles: ['forearms'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'toes-to-bar', name: 'Toes to Bar', primaryMuscle: 'abs', secondaryMuscles: ['forearms'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'plank', name: 'Plank', primaryMuscle: 'abs', secondaryMuscles: ['shoulders'], equipment: 'bodyweight', exerciseType: 'duration' },
-  { slug: 'side-plank', name: 'Side Plank', primaryMuscle: 'abs', secondaryMuscles: ['shoulders'], equipment: 'bodyweight', exerciseType: 'duration' },
-  { slug: 'mountain-climber', name: 'Mountain Climber', primaryMuscle: 'abs', secondaryMuscles: ['shoulders', 'quads'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'russian-twist', name: 'Russian Twist', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'weighted-russian-twist', name: 'Weighted Russian Twist', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-crunch', name: 'Cable Crunch', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-woodchop', name: 'Cable Woodchop', primaryMuscle: 'abs', secondaryMuscles: ['shoulders'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-pallof-press', name: 'Pallof Press', primaryMuscle: 'abs', secondaryMuscles: ['shoulders'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'machine-ab-crunch', name: 'Machine Ab Crunch', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'ab-wheel-rollout', name: 'Ab Wheel Rollout', primaryMuscle: 'abs', secondaryMuscles: ['shoulders'], equipment: 'other', exerciseType: 'bodyweight_reps' },
-  { slug: 'flutter-kick', name: 'Flutter Kick', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'dead-bug', name: 'Dead Bug', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'hollow-body-hold', name: 'Hollow Body Hold', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'duration' },
-  { slug: 'dragon-flag', name: 'Dragon Flag', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'l-sit', name: 'L-Sit', primaryMuscle: 'abs', secondaryMuscles: ['shoulders'], equipment: 'bodyweight', exerciseType: 'duration' },
-  { slug: 'cable-reverse-crunch', name: 'Cable Reverse Crunch', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'decline-sit-up', name: 'Decline Sit-Up', primaryMuscle: 'abs', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-
-  // ── CARDIO ────────────────────────────────────────────────────
-  { slug: 'treadmill-run', name: 'Treadmill Run', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'hamstrings', 'calves'], equipment: 'machine', exerciseType: 'distance_duration' },
-  { slug: 'outdoor-run', name: 'Outdoor Run', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'hamstrings', 'calves'], equipment: 'bodyweight', exerciseType: 'distance_duration' },
-  { slug: 'treadmill-walk', name: 'Treadmill Walk', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'calves'], equipment: 'machine', exerciseType: 'distance_duration' },
-  { slug: 'outdoor-walk', name: 'Outdoor Walk', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'calves'], equipment: 'bodyweight', exerciseType: 'distance_duration' },
-  { slug: 'stationary-bike', name: 'Stationary Bike', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'hamstrings'], equipment: 'machine', exerciseType: 'distance_duration' },
-  { slug: 'outdoor-cycle', name: 'Outdoor Cycle', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'hamstrings'], equipment: 'bodyweight', exerciseType: 'distance_duration' },
-  { slug: 'rowing-machine', name: 'Rowing Machine', primaryMuscle: 'cardio', secondaryMuscles: ['back', 'biceps', 'quads'], equipment: 'machine', exerciseType: 'distance_duration' },
-  { slug: 'elliptical', name: 'Elliptical Trainer', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'hamstrings'], equipment: 'machine', exerciseType: 'distance_duration' },
-  { slug: 'stair-climber', name: 'Stair Climber', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'glutes', 'calves'], equipment: 'machine', exerciseType: 'duration' },
-  { slug: 'jump-rope', name: 'Jump Rope', primaryMuscle: 'cardio', secondaryMuscles: ['calves', 'shoulders'], equipment: 'other', exerciseType: 'duration' },
-  { slug: 'battle-ropes', name: 'Battle Ropes', primaryMuscle: 'cardio', secondaryMuscles: ['shoulders', 'abs'], equipment: 'other', exerciseType: 'duration' },
-  { slug: 'burpee', name: 'Burpee', primaryMuscle: 'cardio', secondaryMuscles: ['chest', 'quads', 'shoulders'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'box-jump', name: 'Box Jump', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'glutes', 'calves'], equipment: 'other', exerciseType: 'bodyweight_reps' },
-  { slug: 'sled-push', name: 'Sled Push', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'glutes'], equipment: 'other', exerciseType: 'weight_duration' },
-  { slug: 'swimming', name: 'Swimming', primaryMuscle: 'cardio', secondaryMuscles: ['back', 'shoulders'], equipment: 'bodyweight', exerciseType: 'distance_duration' },
-  { slug: 'assault-bike', name: 'Assault Bike', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'shoulders'], equipment: 'machine', exerciseType: 'distance_duration' },
-  { slug: 'ski-erg', name: 'Ski Erg', primaryMuscle: 'cardio', secondaryMuscles: ['back', 'triceps', 'abs'], equipment: 'machine', exerciseType: 'distance_duration' },
-  { slug: 'hiking', name: 'Hiking', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'calves', 'glutes'], equipment: 'bodyweight', exerciseType: 'distance_duration' },
-  { slug: 'sprints', name: 'Sprints', primaryMuscle: 'cardio', secondaryMuscles: ['quads', 'hamstrings', 'glutes'], equipment: 'bodyweight', exerciseType: 'distance_duration' },
-
-  // ── OTHER / FULL-BODY / OLYMPIC ───────────────────────────────
-  { slug: 'barbell-clean', name: 'Power Clean', primaryMuscle: 'other', secondaryMuscles: ['quads', 'back', 'shoulders', 'hamstrings'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-clean-and-jerk', name: 'Clean and Jerk', primaryMuscle: 'other', secondaryMuscles: ['quads', 'back', 'shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-snatch', name: 'Snatch', primaryMuscle: 'other', secondaryMuscles: ['quads', 'back', 'shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-hang-clean', name: 'Hang Clean', primaryMuscle: 'other', secondaryMuscles: ['quads', 'back', 'shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-thruster', name: 'Barbell Thruster', primaryMuscle: 'other', secondaryMuscles: ['quads', 'shoulders', 'triceps'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-thruster', name: 'Dumbbell Thruster', primaryMuscle: 'other', secondaryMuscles: ['quads', 'shoulders'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-clean-and-press', name: 'Dumbbell Clean and Press', primaryMuscle: 'other', secondaryMuscles: ['quads', 'back', 'shoulders'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-man-maker', name: 'Man Maker', primaryMuscle: 'other', secondaryMuscles: ['chest', 'shoulders', 'back', 'quads'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'kettlebell-clean-and-press', name: 'Kettlebell Clean and Press', primaryMuscle: 'other', secondaryMuscles: ['shoulders', 'back'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-  { slug: 'kettlebell-snatch', name: 'Kettlebell Snatch', primaryMuscle: 'other', secondaryMuscles: ['shoulders', 'back'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-  { slug: 'kettlebell-turkish-getup', name: 'Turkish Get-Up', primaryMuscle: 'other', secondaryMuscles: ['shoulders', 'abs', 'glutes'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-  { slug: 'muscle-up', name: 'Muscle-Up', primaryMuscle: 'other', secondaryMuscles: ['back', 'chest', 'triceps'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'bear-crawl', name: 'Bear Crawl', primaryMuscle: 'other', secondaryMuscles: ['shoulders', 'abs', 'quads'], equipment: 'bodyweight', exerciseType: 'duration' },
-  { slug: 'stretching', name: 'Stretching', primaryMuscle: 'other', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'duration' },
-  { slug: 'foam-rolling', name: 'Foam Rolling', primaryMuscle: 'other', secondaryMuscles: [], equipment: 'other', exerciseType: 'duration' },
-
-  // ── ADDITIONAL CHEST ──────────────────────────────────────────
-  { slug: 'barbell-guillotine-press', name: 'Guillotine Press', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-floor-press', name: 'Dumbbell Floor Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-flat-bench-fly', name: 'Cable Flat Bench Fly', primaryMuscle: 'chest', secondaryMuscles: ['shoulders'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'smith-machine-bench-press', name: 'Smith Machine Bench Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'smith-machine-incline-press', name: 'Smith Machine Incline Press', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'weighted-push-up', name: 'Weighted Push-Up', primaryMuscle: 'chest', secondaryMuscles: ['triceps', 'shoulders'], equipment: 'bodyweight', exerciseType: 'weighted_bodyweight' },
-
-  // ── ADDITIONAL BACK ───────────────────────────────────────────
-  { slug: 'barbell-deficit-deadlift', name: 'Deficit Deadlift', primaryMuscle: 'back', secondaryMuscles: ['hamstrings', 'glutes'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'trap-bar-deadlift', name: 'Trap Bar Deadlift', primaryMuscle: 'back', secondaryMuscles: ['quads', 'glutes', 'hamstrings'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-chest-supported-row', name: 'Chest-Supported Dumbbell Row', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-single-arm-pulldown', name: 'Single-Arm Lat Pulldown', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-v-grip-pulldown', name: 'V-Grip Pulldown', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'cable-seated-row-wide', name: 'Wide-Grip Seated Cable Row', primaryMuscle: 'back', secondaryMuscles: ['shoulders'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'machine-lat-pulldown', name: 'Machine Lat Pulldown', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'wide-grip-pull-up', name: 'Wide-Grip Pull-Up', primaryMuscle: 'back', secondaryMuscles: ['biceps', 'forearms'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'commando-pull-up', name: 'Commando Pull-Up', primaryMuscle: 'back', secondaryMuscles: ['biceps'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-
-  // ── ADDITIONAL SHOULDERS ──────────────────────────────────────
-  { slug: 'dumbbell-seated-shoulder-press', name: 'Seated Dumbbell Shoulder Press', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-bus-driver', name: 'Bus Driver Raise', primaryMuscle: 'shoulders', secondaryMuscles: ['forearms'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-cross-body-rear-delt', name: 'Cable Cross-Body Rear Delt Fly', primaryMuscle: 'shoulders', secondaryMuscles: ['back'], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'smith-machine-shoulder-press', name: 'Smith Machine Shoulder Press', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'barbell-landmine-press', name: 'Landmine Press', primaryMuscle: 'shoulders', secondaryMuscles: ['chest', 'triceps'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-bradford-press', name: 'Bradford Press', primaryMuscle: 'shoulders', secondaryMuscles: ['triceps'], equipment: 'barbell', exerciseType: 'weight_reps' },
-
-  // ── ADDITIONAL BICEPS ─────────────────────────────────────────
-  { slug: 'dumbbell-cross-body-curl', name: 'Cross-Body Hammer Curl', primaryMuscle: 'biceps', secondaryMuscles: ['forearms'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-waiter-curl', name: 'Waiter Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-high-curl', name: 'Overhead Cable Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'barbell-21s-curl', name: '21s Barbell Curl', primaryMuscle: 'biceps', secondaryMuscles: [], equipment: 'barbell', exerciseType: 'weight_reps' },
-
-  // ── ADDITIONAL TRICEPS ────────────────────────────────────────
-  { slug: 'dumbbell-close-grip-press', name: 'Dumbbell Close-Grip Press', primaryMuscle: 'triceps', secondaryMuscles: ['chest'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'cable-kickback-tricep', name: 'Cable Tricep Kickback', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'cable', exerciseType: 'weight_reps' },
-  { slug: 'barbell-california-press', name: 'California Press', primaryMuscle: 'triceps', secondaryMuscles: ['chest'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'band-pushdown', name: 'Band Pushdown', primaryMuscle: 'triceps', secondaryMuscles: [], equipment: 'band', exerciseType: 'weight_reps' },
-
-  // ── ADDITIONAL QUADS ──────────────────────────────────────────
-  { slug: 'barbell-zercher-squat', name: 'Zercher Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'abs'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-box-squat', name: 'Box Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes', 'hamstrings'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-split-squat', name: 'Barbell Split Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-reverse-lunge', name: 'Dumbbell Reverse Lunge', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'machine-single-leg-press', name: 'Single-Leg Leg Press', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'machine-sissy-squat', name: 'Machine Sissy Squat', primaryMuscle: 'quads', secondaryMuscles: [], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-sumo-squat', name: 'Dumbbell Sumo Squat', primaryMuscle: 'quads', secondaryMuscles: ['glutes'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-
-  // ── ADDITIONAL HAMSTRINGS ─────────────────────────────────────
-  { slug: 'dumbbell-single-leg-curl', name: 'Single-Leg Dumbbell Curl', primaryMuscle: 'hamstrings', secondaryMuscles: [], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'band-hamstring-curl', name: 'Band Hamstring Curl', primaryMuscle: 'hamstrings', secondaryMuscles: [], equipment: 'band', exerciseType: 'weight_reps' },
-  { slug: 'slider-hamstring-curl', name: 'Slider Hamstring Curl', primaryMuscle: 'hamstrings', secondaryMuscles: ['glutes'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'kettlebell-single-leg-rdl', name: 'Kettlebell Single-Leg RDL', primaryMuscle: 'hamstrings', secondaryMuscles: ['glutes', 'back'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-
-  // ── ADDITIONAL GLUTES ─────────────────────────────────────────
-  { slug: 'barbell-sumo-squat', name: 'Barbell Sumo Squat', primaryMuscle: 'glutes', secondaryMuscles: ['quads'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'smith-machine-hip-thrust', name: 'Smith Machine Hip Thrust', primaryMuscle: 'glutes', secondaryMuscles: ['hamstrings'], equipment: 'machine', exerciseType: 'weight_reps' },
-  { slug: 'curtsy-lunge', name: 'Curtsy Lunge', primaryMuscle: 'glutes', secondaryMuscles: ['quads'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'frog-pump', name: 'Frog Pump', primaryMuscle: 'glutes', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-
-  // ── ADDITIONAL ABS ────────────────────────────────────────────
-  { slug: 'hanging-windshield-wiper', name: 'Hanging Windshield Wiper', primaryMuscle: 'abs', secondaryMuscles: ['forearms'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-  { slug: 'landmine-rotation', name: 'Landmine Rotation', primaryMuscle: 'abs', secondaryMuscles: ['shoulders'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'weighted-plank', name: 'Weighted Plank', primaryMuscle: 'abs', secondaryMuscles: ['shoulders'], equipment: 'other', exerciseType: 'duration' },
-  { slug: 'bird-dog', name: 'Bird Dog', primaryMuscle: 'abs', secondaryMuscles: ['back'], equipment: 'bodyweight', exerciseType: 'bodyweight_reps' },
-
-  // ── ADDITIONAL CARDIO ─────────────────────────────────────────
-  { slug: 'versa-climber', name: 'VersaClimber', primaryMuscle: 'cardio', secondaryMuscles: ['shoulders', 'quads', 'back'], equipment: 'machine', exerciseType: 'duration' },
-  { slug: 'incline-treadmill-walk', name: 'Incline Treadmill Walk', primaryMuscle: 'cardio', secondaryMuscles: ['calves', 'glutes'], equipment: 'machine', exerciseType: 'distance_duration' },
-  { slug: 'sled-pull', name: 'Sled Pull', primaryMuscle: 'cardio', secondaryMuscles: ['back', 'hamstrings'], equipment: 'other', exerciseType: 'weight_duration' },
-  { slug: 'tire-flip', name: 'Tire Flip', primaryMuscle: 'cardio', secondaryMuscles: ['back', 'quads', 'shoulders'], equipment: 'other', exerciseType: 'bodyweight_reps' },
-
-  // ── ADDITIONAL OTHER / COMPOUND ───────────────────────────────
-  { slug: 'barbell-power-snatch', name: 'Power Snatch', primaryMuscle: 'other', secondaryMuscles: ['shoulders', 'back', 'quads'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-hang-snatch', name: 'Hang Snatch', primaryMuscle: 'other', secondaryMuscles: ['shoulders', 'back'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-clean-pull', name: 'Clean Pull', primaryMuscle: 'other', secondaryMuscles: ['back', 'hamstrings'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-overhead-squat', name: 'Overhead Squat', primaryMuscle: 'other', secondaryMuscles: ['quads', 'shoulders', 'abs'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'barbell-landmine-row', name: 'Landmine Row', primaryMuscle: 'other', secondaryMuscles: ['back', 'biceps'], equipment: 'barbell', exerciseType: 'weight_reps' },
-  { slug: 'dumbbell-renegade-row', name: 'Renegade Row', primaryMuscle: 'other', secondaryMuscles: ['back', 'abs', 'chest'], equipment: 'dumbbell', exerciseType: 'weight_reps' },
-  { slug: 'kettlebell-windmill', name: 'Kettlebell Windmill', primaryMuscle: 'other', secondaryMuscles: ['abs', 'shoulders'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-  { slug: 'kettlebell-halo', name: 'Kettlebell Halo', primaryMuscle: 'other', secondaryMuscles: ['shoulders', 'abs'], equipment: 'kettlebell', exerciseType: 'weight_reps' },
-  { slug: 'rope-climb', name: 'Rope Climb', primaryMuscle: 'other', secondaryMuscles: ['back', 'biceps', 'forearms'], equipment: 'other', exerciseType: 'bodyweight_reps' },
-  { slug: 'wall-ball', name: 'Wall Ball', primaryMuscle: 'other', secondaryMuscles: ['quads', 'shoulders'], equipment: 'other', exerciseType: 'weight_reps' },
-  { slug: 'med-ball-slam', name: 'Medicine Ball Slam', primaryMuscle: 'other', secondaryMuscles: ['abs', 'shoulders', 'back'], equipment: 'other', exerciseType: 'weight_reps' },
-  { slug: 'yoga', name: 'Yoga', primaryMuscle: 'other', secondaryMuscles: [], equipment: 'bodyweight', exerciseType: 'duration' },
-];

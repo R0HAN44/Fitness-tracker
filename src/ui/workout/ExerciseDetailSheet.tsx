@@ -24,6 +24,11 @@ import { lightImpact } from '../../lib/haptics';
 import { Ionicons } from '@expo/vector-icons';
 import type { ExerciseRow } from '../../db/queries/exercises';
 import {
+  determineMovementType,
+  getExerciseInstructions,
+  getExerciseCommonMistakes,
+} from '../../data/exerciseContent';
+import {
   getExerciseHistory,
   getExercisePRs,
   getPastSessionComparisonForExercise,
@@ -83,6 +88,41 @@ export function ExerciseDetailSheet({
   if (!exercise) return null;
 
   const isArchived = exercise.deletedAt != null;
+  const movementType =
+    exercise.movementType ??
+    determineMovementType(exercise.slug, exercise.name, exercise.primaryMuscle, exercise.exerciseType);
+
+  const instructionsList: string[] = exercise.instructions
+    ? (() => {
+        try {
+          return JSON.parse(exercise.instructions);
+        } catch {
+          return [];
+        }
+      })()
+    : getExerciseInstructions(
+        exercise.slug,
+        exercise.name,
+        exercise.primaryMuscle,
+        exercise.equipment,
+        exercise.exerciseType,
+      );
+
+  const mistakesList: string[] = exercise.commonMistakes
+    ? (() => {
+        try {
+          return JSON.parse(exercise.commonMistakes);
+        } catch {
+          return [];
+        }
+      })()
+    : getExerciseCommonMistakes(
+        exercise.slug,
+        exercise.name,
+        exercise.primaryMuscle,
+        exercise.equipment,
+      );
+
   const secondaryMuscles: string[] = exercise.secondaryMuscles
     ? (() => {
         try {
@@ -171,6 +211,28 @@ export function ExerciseDetailSheet({
                     {equipmentLabels[exercise.equipment as EquipmentType] ?? exercise.equipment}
                   </Text>
                 </View>
+                <View
+                  style={[
+                    styles.badge,
+                    {
+                      backgroundColor: movementType === 'compound' ? theme.accent + '22' : theme.elevated,
+                      borderColor: movementType === 'compound' ? theme.accent : theme.border,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={movementType === 'compound' ? 'layers-outline' : 'disc-outline'}
+                    size={14}
+                    color={movementType === 'compound' ? theme.accent : theme.textMuted}
+                  />
+                  <Text
+                    variant="caption"
+                    color={movementType === 'compound' ? 'accent' : 'text'}
+                    style={[styles.badgeText, { fontWeight: '700' }]}
+                  >
+                    {movementType === 'compound' ? 'Compound' : 'Isolation'}
+                  </Text>
+                </View>
                 {isArchived && (
                   <View style={[styles.badge, { backgroundColor: theme.danger + '22', borderColor: theme.danger }]}>
                     <Text variant="caption" style={{ color: theme.danger, fontWeight: '700' }}>
@@ -224,11 +286,61 @@ export function ExerciseDetailSheet({
                 </View>
               </View>
 
+              {/* Step-by-Step Instructions */}
+              {instructionsList.length > 0 && (
+                <View style={[styles.section, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <View style={styles.sectionTitleRow}>
+                    <Ionicons name="list-outline" size={18} color={theme.accent} />
+                    <Text variant="headingSm" style={styles.sectionHeader}>
+                      Instructions
+                    </Text>
+                  </View>
+                  <View style={styles.stepsList}>
+                    {instructionsList.map((step, idx) => (
+                      <View key={idx} style={styles.stepRow}>
+                        <View style={[styles.stepNumberBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent }]}>
+                          <Text variant="caption" color="accent" style={{ fontWeight: '700' }}>
+                            {idx + 1}
+                          </Text>
+                        </View>
+                        <Text variant="bodySm" color="text" style={{ flex: 1, lineHeight: 20 }}>
+                          {step}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Common Mistakes & Form Cues */}
+              {mistakesList.length > 0 && (
+                <View style={[styles.section, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <View style={styles.sectionTitleRow}>
+                    <Ionicons name="warning-outline" size={18} color={theme.setWarmup} />
+                    <Text variant="headingSm" style={styles.sectionHeader}>
+                      Common Mistakes & Cues
+                    </Text>
+                  </View>
+                  <View style={styles.stepsList}>
+                    {mistakesList.map((mistake, idx) => (
+                      <View key={idx} style={styles.stepRow}>
+                        <View style={[styles.stepNumberBadge, { backgroundColor: theme.setWarmup + '22', borderColor: theme.setWarmup }]}>
+                          <Ionicons name="alert" size={12} color={theme.setWarmup} />
+                        </View>
+                        <Text variant="bodySm" color="text" style={{ flex: 1, lineHeight: 20 }}>
+                          {mistake}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
               {/* Notes */}
               {exercise.notes ? (
                 <View style={[styles.section, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                   <Text variant="headingSm" style={styles.sectionHeader}>
-                    Instructions & Notes
+                    Additional Notes
                   </Text>
                   <Text variant="bodySm" color="text" style={{ lineHeight: 20 }}>
                     {exercise.notes}
@@ -565,6 +677,29 @@ const styles = StyleSheet.create({
   },
   stepperContainer: {
     marginTop: spacing.xs,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  stepsList: {
+    gap: spacing.sm,
+    marginTop: 2,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  stepNumberBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
   },
   actionsContainer: {
     gap: spacing.sm,

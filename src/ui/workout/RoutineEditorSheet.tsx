@@ -61,6 +61,9 @@ export function RoutineEditorSheet({
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
+  // Routine Tags state
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
   useEffect(() => {
     if (!visible) return;
 
@@ -73,6 +76,16 @@ export function RoutineEditorSheet({
         setName(routine.name);
         setNotes(routine.notes ?? '');
         setSelectedFolderId(routine.folderId);
+        const parsedTags: string[] = routine.tags
+          ? (() => {
+              try {
+                return JSON.parse(routine.tags);
+              } catch {
+                return [];
+              }
+            })()
+          : [];
+        setSelectedTags(parsedTags);
         setExercisesList(
           routine.exercises.map((re) => ({
             exercise: re.exercise,
@@ -91,6 +104,7 @@ export function RoutineEditorSheet({
     setName('');
     setNotes('');
     setSelectedFolderId(null);
+    setSelectedTags([]);
     setExercisesList([]);
   }, [visible, routineId]);
 
@@ -216,6 +230,7 @@ export function RoutineEditorSheet({
         name: name.trim(),
         folderId: selectedFolderId,
         notes: notes.trim() || null,
+        tags: selectedTags,
         exercises: exercisesList.map((item) => ({
           exerciseId: item.exercise.id,
           sets: item.sets.map((s) => ({
@@ -232,6 +247,7 @@ export function RoutineEditorSheet({
           name: routineInput.name,
           folderId: routineInput.folderId,
           notes: routineInput.notes,
+          tags: JSON.stringify(selectedTags),
         });
         result = getRoutineById(routineId)!;
       } else {
@@ -337,6 +353,58 @@ export function RoutineEditorSheet({
               <Button title="Add" size="sm" variant="primary" onPress={handleCreateFolder} />
             </View>
           )}
+        </View>
+
+        {/* Routine Tags */}
+        <View style={styles.section}>
+          <Text variant="caption" color="textMuted" style={styles.sectionLabel}>
+            ROUTINE TAGS
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+            {[
+              'strength',
+              'hypertrophy',
+              'ppl',
+              'upper_lower',
+              'full_body',
+              'beginner',
+              'intermediate',
+              'advanced',
+              'dumbbell',
+              'bodyweight',
+              'conditioning',
+            ].map((tag) => {
+              const isSelected = selectedTags.includes(tag);
+              return (
+                <Pressable
+                  key={tag}
+                  onPress={() => {
+                    lightImpact();
+                    setSelectedTags((prev) =>
+                      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+                    );
+                  }}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: isSelected ? theme.accent : theme.surface,
+                      borderColor: isSelected ? theme.accent : theme.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    variant="caption"
+                    style={{
+                      color: isSelected ? theme.onAccent : theme.text,
+                      fontWeight: isSelected ? '700' : '500',
+                    }}
+                  >
+                    #{tag.replace(/_/g, ' ')}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
         </View>
 
         {/* Exercises */}

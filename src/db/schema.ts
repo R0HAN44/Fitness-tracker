@@ -52,6 +52,9 @@ export const exercises = sqliteTable(
     secondaryMuscles: text('secondary_muscles'), // JSON array
     equipment: text('equipment').notNull(),
     exerciseType: text('exercise_type').notNull(),
+    movementType: text('movement_type').default('compound'), // 'compound' | 'isolation'
+    instructions: text('instructions'), // JSON array of step-by-step instruction strings
+    commonMistakes: text('common_mistakes'), // JSON array of common mistake strings
     notes: text('notes'),
     isCustom: integer('is_custom', { mode: 'boolean' }).notNull().default(false),
     defaultRestSeconds: integer('default_rest_seconds'),
@@ -224,6 +227,7 @@ export const routines = sqliteTable(
     name: text('name').notNull(),
     folderId: text('folder_id').references(() => routineFolders.id, { onDelete: 'set null' }),
     notes: text('notes'),
+    tags: text('tags'), // JSON array of tag strings
     isPreset: integer('is_preset', { mode: 'boolean' }).notNull().default(false),
     sortOrder: integer('sort_order'),
     createdAt: text('created_at').notNull(),

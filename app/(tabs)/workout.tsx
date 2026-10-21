@@ -4,7 +4,7 @@
  *   2. Workout Dashboard (to start an empty workout or from routines)
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, ScrollView, Pressable, ActivityIndicator, Alert, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +37,7 @@ export default function WorkoutScreen() {
   const [routinesList, setRoutinesList] = useState<FullRoutine[]>([]);
   const [folders, setFolders] = useState<RoutineFolderRow[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   // Routine editor sheet
   const [showRoutineEditor, setShowRoutineEditor] = useState(false);
@@ -51,6 +52,32 @@ export default function WorkoutScreen() {
     const allFolders = getRoutineFolders();
     setFolders(allFolders);
   }, [selectedFolderId]);
+
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    routinesList.forEach((r) => {
+      if (r.tags) {
+        try {
+          const tags: string[] = JSON.parse(r.tags);
+          tags.forEach((t) => set.add(t));
+        } catch {}
+      }
+    });
+    return Array.from(set);
+  }, [routinesList]);
+
+  const displayedRoutines = useMemo(() => {
+    if (!selectedTag) return routinesList;
+    return routinesList.filter((r) => {
+      if (!r.tags) return false;
+      try {
+        const tags: string[] = JSON.parse(r.tags);
+        return tags.includes(selectedTag);
+      } catch {
+        return false;
+      }
+    });
+  }, [routinesList, selectedTag]);
 
   useEffect(() => {
     loadActiveWorkout();
@@ -261,7 +288,10 @@ export default function WorkoutScreen() {
         {/* Folder Filter Chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.folderRow}>
           <Pressable
-            onPress={() => setSelectedFolderId(undefined)}
+            onPress={() => {
+              lightImpact();
+              setSelectedFolderId(undefined);
+            }}
             style={[
               styles.folderChip,
               {
@@ -277,7 +307,7 @@ export default function WorkoutScreen() {
                 fontWeight: selectedFolderId === undefined ? '700' : '500',
               }}
             >
-              All
+              All Folders
             </Text>
           </Pressable>
 
@@ -286,7 +316,10 @@ export default function WorkoutScreen() {
             return (
               <Pressable
                 key={folder.id}
-                onPress={() => setSelectedFolderId(folder.id)}
+                onPress={() => {
+                  lightImpact();
+                  setSelectedFolderId(folder.id);
+                }}
                 style={[
                   styles.folderChip,
                   {
@@ -309,70 +342,160 @@ export default function WorkoutScreen() {
           })}
         </ScrollView>
 
+        {/* Tag Filter Chips */}
+        {availableTags.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.folderRow}>
+            <Pressable
+              onPress={() => {
+                lightImpact();
+                setSelectedTag(null);
+              }}
+              style={[
+                styles.tagFilterChip,
+                {
+                  backgroundColor: selectedTag === null ? theme.text : theme.surface,
+                  borderColor: selectedTag === null ? theme.text : theme.border,
+                },
+              ]}
+            >
+              <Text
+                variant="caption"
+                style={{
+                  color: selectedTag === null ? theme.background : theme.textMuted,
+                  fontWeight: selectedTag === null ? '700' : '500',
+                }}
+              >
+                All Tags
+              </Text>
+            </Pressable>
+
+            {availableTags.map((tag) => {
+              const isSelected = selectedTag === tag;
+              return (
+                <Pressable
+                  key={tag}
+                  onPress={() => {
+                    lightImpact();
+                    setSelectedTag(isSelected ? null : tag);
+                  }}
+                  style={[
+                    styles.tagFilterChip,
+                    {
+                      backgroundColor: isSelected ? theme.accent : theme.surface,
+                      borderColor: isSelected ? theme.accent : theme.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    variant="caption"
+                    style={{
+                      color: isSelected ? theme.onAccent : theme.textMuted,
+                      fontWeight: isSelected ? '700' : '500',
+                    }}
+                  >
+                    #{tag.replace(/_/g, ' ')}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
+
         {/* Routines List */}
-        {routinesList.length === 0 ? (
+        {displayedRoutines.length === 0 ? (
           <View style={[styles.emptyState, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Ionicons name="clipboard-outline" size={36} color={theme.textMuted} />
             <Text variant="headingSm" color="text">
-              No Routines in this Folder
+              No Routines Match Filter
             </Text>
             <Text variant="bodySm" color="textMuted" center>
-              Create custom routines to quickly launch your favorite workouts.
+              Try clearing folder or tag filters, or create a new routine template.
             </Text>
           </View>
         ) : (
-          routinesList.map((routine) => (
-            <View
-              key={routine.id}
-              style={[styles.routineCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            >
-              <View style={styles.routineHeader}>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.titleRow}>
-                    <Text variant="headingSm" style={{ fontWeight: '700' }}>
-                      {routine.name}
-                    </Text>
-                    {routine.isPreset ? (
-                      <View style={[styles.presetBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent }]}>
-                        <Text variant="caption" style={{ color: theme.accent, fontSize: 10, fontWeight: '700' }}>
-                          PRESET
-                        </Text>
-                      </View>
+          displayedRoutines.map((routine) => {
+            const routineTags: string[] = routine.tags
+              ? (() => {
+                  try {
+                    return JSON.parse(routine.tags);
+                  } catch {
+                    return [];
+                  }
+                })()
+              : [];
+
+            return (
+              <View
+                key={routine.id}
+                style={[styles.routineCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              >
+                <View style={styles.routineHeader}>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.titleRow}>
+                      <Text variant="headingSm" style={{ fontWeight: '700' }}>
+                        {routine.name}
+                      </Text>
+                      {routine.isPreset ? (
+                        <View style={[styles.presetBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent }]}>
+                          <Text variant="caption" style={{ color: theme.accent, fontSize: 10, fontWeight: '700' }}>
+                            PRESET
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    {routine.folder ? (
+                      <Text variant="caption" color="accent" style={{ fontWeight: '600', marginTop: 2 }}>
+                        📁 {routine.folder.name}
+                      </Text>
                     ) : null}
                   </View>
 
-                  {routine.folder ? (
-                    <Text variant="caption" color="accent" style={{ fontWeight: '600', marginTop: 2 }}>
-                      📁 {routine.folder.name}
-                    </Text>
-                  ) : null}
+                  <Pressable onPress={() => handleOpenMenu(routine)} hitSlop={8} style={styles.cardMenuBtn}>
+                    <Ionicons name="ellipsis-horizontal" size={20} color={theme.textMuted} />
+                  </Pressable>
                 </View>
 
-                <Pressable onPress={() => handleOpenMenu(routine)} hitSlop={8} style={styles.cardMenuBtn}>
-                  <Ionicons name="ellipsis-horizontal" size={20} color={theme.textMuted} />
-                </Pressable>
-              </View>
-
-              {/* Exercises preview */}
-              <Text variant="bodySm" color="textMuted" numberOfLines={2} style={styles.exercisesPreview}>
-                {routine.exercises.map((re) => re.exercise.name).join(', ') || 'No exercises'}
-              </Text>
-
-              {/* Card Footer: Start Routine Button */}
-              <View style={styles.routineFooter}>
-                <Text variant="caption" color="textMuted">
-                  {routine.exercises.length} {routine.exercises.length === 1 ? 'exercise' : 'exercises'}
+                {/* Exercises preview */}
+                <Text variant="bodySm" color="textMuted" numberOfLines={2} style={styles.exercisesPreview}>
+                  {routine.exercises.map((re) => re.exercise.name).join(', ') || 'No exercises'}
                 </Text>
-                <Button
-                  title="Start Routine"
-                  size="sm"
-                  variant="primary"
-                  icon={<Ionicons name="play" size={14} color={theme.onAccent} />}
-                  onPress={() => handleStartRoutine(routine.id)}
-                />
+
+                {/* Routine Tags */}
+                {routineTags.length > 0 && (
+                  <View style={styles.routineTagsRow}>
+                    {routineTags.map((tag) => (
+                      <View
+                        key={tag}
+                        style={[
+                          styles.routineTagBadge,
+                          { backgroundColor: theme.elevated, borderColor: theme.border },
+                        ]}
+                      >
+                        <Text variant="caption" color="textMuted" style={{ fontSize: 11 }}>
+                          #{tag.replace(/_/g, ' ')}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Card Footer: Start Routine Button */}
+                <View style={styles.routineFooter}>
+                  <Text variant="caption" color="textMuted">
+                    {routine.exercises.length} {routine.exercises.length === 1 ? 'exercise' : 'exercises'}
+                  </Text>
+                  <Button
+                    title="Start Routine"
+                    size="sm"
+                    variant="primary"
+                    icon={<Ionicons name="play" size={14} color={theme.onAccent} />}
+                    onPress={() => handleStartRoutine(routine.id)}
+                  />
+                </View>
               </View>
-            </View>
-          ))
+            );
+          })
         )}
       </ScrollView>
 
@@ -430,6 +553,24 @@ const styles = StyleSheet.create({
   folderChip: {
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
+    borderRadius: radii.full,
+    borderWidth: 1,
+  },
+  tagFilterChip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radii.full,
+    borderWidth: 1,
+  },
+  routineTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: 2,
+  },
+  routineTagBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: radii.full,
     borderWidth: 1,
   },

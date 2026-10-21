@@ -43,6 +43,7 @@ export interface CreateRoutineInput {
   name: string;
   folderId?: string | null;
   notes?: string | null;
+  tags?: string[] | null;
   isPreset?: boolean;
   exercises: Array<{
     exerciseId: string;
@@ -214,6 +215,7 @@ export function createRoutine(input: CreateRoutineInput): FullRoutine {
       name: input.name,
       folderId: input.folderId ?? null,
       notes: input.notes ?? null,
+      tags: input.tags ? JSON.stringify(input.tags) : null,
       isPreset: input.isPreset ?? false,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -259,7 +261,7 @@ export function createRoutine(input: CreateRoutineInput): FullRoutine {
 
 export function updateRoutine(
   routineId: string,
-  updates: Partial<Pick<RoutineRow, 'name' | 'folderId' | 'notes'>>,
+  updates: Partial<Pick<RoutineRow, 'name' | 'folderId' | 'notes' | 'tags'>>,
 ): void {
   const db = getDb();
   db.update(routines)
@@ -456,19 +458,32 @@ export function saveWorkoutAsRoutine(
 
 export function seedStarterRoutines(): void {
   const db = getDb();
-
-  // Check if presets are already seeded
-  const existingPreset = db
-    .select({ id: routines.id })
-    .from(routines)
-    .where(eq(routines.isPreset, true))
-    .get();
-
-  if (existingPreset) return;
-
   const folderMap = new Map<string, string>();
 
   for (const blueprint of STARTER_ROUTINES) {
+    // Check if this specific preset routine already exists
+    const existing = db
+      .select({ id: routines.id, tags: routines.tags })
+      .from(routines)
+      .where(
+        and(
+          eq(routines.name, blueprint.name),
+          eq(routines.isPreset, true),
+          isNull(routines.deletedAt),
+        ),
+      )
+      .get();
+
+    if (existing) {
+      // Backfill tags if missing
+      if (!existing.tags && blueprint.tags.length > 0) {
+        updateRoutine(existing.id, {
+          tags: JSON.stringify(blueprint.tags),
+        });
+      }
+      continue;
+    }
+
     // Ensure folder exists
     let folderId = folderMap.get(blueprint.folderName);
     if (!folderId) {
@@ -523,6 +538,7 @@ export function seedStarterRoutines(): void {
       name: blueprint.name,
       folderId,
       notes: blueprint.notes,
+      tags: blueprint.tags,
       isPreset: true,
       exercises: routineExercisesData,
     });
