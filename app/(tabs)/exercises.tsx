@@ -26,7 +26,7 @@ import {
   type ExerciseSortOption,
 } from '../../src/db/queries/exercises';
 import { MUSCLE_GROUPS, muscleGroupLabels, type MuscleGroup } from '../../src/constants/muscles';
-import { equipmentLabels, type EquipmentType } from '../../src/constants/equipment';
+import { EQUIPMENT_TYPES, equipmentLabels, type EquipmentType } from '../../src/constants/equipment';
 import { lightImpact } from '../../src/lib/haptics';
 
 const SORT_OPTIONS: Array<{ value: ExerciseSortOption; label: string }> = [
@@ -41,6 +41,7 @@ export default function ExercisesScreen() {
   const [exercisesList, setExercisesList] = useState<ExerciseRow[]>([]);
   const [search, setSearch] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<string>('all');
+  const [selectedEquipment, setSelectedEquipment] = useState<string>('all');
   const [sortBy, setSortBy] = useState<ExerciseSortOption>('name');
 
   // Sheet states
@@ -53,11 +54,12 @@ export default function ExercisesScreen() {
     const data = getExercises({
       query: search,
       muscle: selectedMuscle,
+      equipment: selectedEquipment,
       sortBy,
       includeArchived: false,
     });
     setExercisesList(data);
-  }, [search, selectedMuscle, sortBy]);
+  }, [search, selectedMuscle, selectedEquipment, sortBy]);
 
   useEffect(() => {
     reloadExercises();
@@ -225,6 +227,62 @@ export default function ExercisesScreen() {
                   }}
                 >
                   {muscleGroupLabels[m]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* Equipment filter chips */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+          <Pressable
+            onPress={() => {
+              lightImpact();
+              setSelectedEquipment('all');
+            }}
+            style={[
+              styles.filterChip,
+              {
+                backgroundColor: selectedEquipment === 'all' ? theme.accent : theme.surface,
+                borderColor: selectedEquipment === 'all' ? theme.accent : theme.border,
+              },
+            ]}
+          >
+            <Text
+              variant="caption"
+              style={{
+                color: selectedEquipment === 'all' ? theme.onAccent : theme.text,
+                fontWeight: selectedEquipment === 'all' ? '700' : '500',
+              }}
+            >
+              All Equipment
+            </Text>
+          </Pressable>
+          {EQUIPMENT_TYPES.map((eqType) => {
+            const isSelected = selectedEquipment === eqType;
+            return (
+              <Pressable
+                key={eqType}
+                onPress={() => {
+                  lightImpact();
+                  setSelectedEquipment(eqType);
+                }}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: isSelected ? theme.accent : theme.surface,
+                    borderColor: isSelected ? theme.accent : theme.border,
+                  },
+                ]}
+              >
+                <Text
+                  variant="caption"
+                  style={{
+                    color: isSelected ? theme.onAccent : theme.text,
+                    fontWeight: isSelected ? '700' : '500',
+                  }}
+                >
+                  {equipmentLabels[eqType] ?? eqType}
                 </Text>
               </Pressable>
             );

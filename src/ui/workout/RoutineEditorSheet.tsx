@@ -114,6 +114,17 @@ export function RoutineEditorSheet({
     setExercisesList((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const handleMoveExercise = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= exercisesList.length) return;
+    lightImpact();
+    setExercisesList((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+
   const handleAddSet = (exerciseIndex: number) => {
     lightImpact();
     setExercisesList((prev) =>
@@ -144,6 +155,20 @@ export function RoutineEditorSheet({
           ...item,
           sets: item.sets.filter((_, sIdx) => sIdx !== setIndex),
         };
+      }),
+    );
+  };
+
+  const handleMoveSet = (exerciseIndex: number, fromSetIndex: number, toSetIndex: number) => {
+    lightImpact();
+    setExercisesList((prev) =>
+      prev.map((item, idx) => {
+        if (idx !== exerciseIndex) return item;
+        if (toSetIndex < 0 || toSetIndex >= item.sets.length) return item;
+        const nextSets = [...item.sets];
+        const [moved] = nextSets.splice(fromSetIndex, 1);
+        nextSets.splice(toSetIndex, 0, moved);
+        return { ...item, sets: nextSets };
       }),
     );
   };
@@ -336,18 +361,58 @@ export function RoutineEditorSheet({
                     {item.exercise.primaryMuscle} · {item.exercise.equipment}
                   </Text>
                 </View>
-                <Pressable onPress={() => handleRemoveExercise(exIdx)} hitSlop={8}>
-                  <Ionicons name="trash-outline" size={18} color={theme.danger} />
-                </Pressable>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Pressable
+                    onPress={() => handleMoveExercise(exIdx, exIdx - 1)}
+                    disabled={exIdx === 0}
+                    hitSlop={6}
+                    style={{ opacity: exIdx === 0 ? 0.25 : 1, padding: 4 }}
+                    accessibilityLabel="Move exercise up"
+                  >
+                    <Ionicons name="arrow-up" size={18} color={theme.text} />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleMoveExercise(exIdx, exIdx + 1)}
+                    disabled={exIdx === exercisesList.length - 1}
+                    hitSlop={6}
+                    style={{ opacity: exIdx === exercisesList.length - 1 ? 0.25 : 1, padding: 4 }}
+                    accessibilityLabel="Move exercise down"
+                  >
+                    <Ionicons name="arrow-down" size={18} color={theme.text} />
+                  </Pressable>
+                  <Pressable onPress={() => handleRemoveExercise(exIdx)} hitSlop={8} style={{ padding: 4, marginLeft: 4 }}>
+                    <Ionicons name="trash-outline" size={18} color={theme.danger} />
+                  </Pressable>
+                </View>
               </View>
 
               {/* Sets Table */}
               <View style={styles.setsTable}>
                 {item.sets.map((s, sIdx) => (
                   <View key={sIdx} style={[styles.setRow, { borderBottomColor: theme.border }]}>
-                    <Text variant="caption" color="textMuted" style={{ width: 24, fontWeight: '700' }}>
-                      {sIdx + 1}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                      <Text variant="caption" color="textMuted" style={{ width: 18, fontWeight: '700' }}>
+                        {sIdx + 1}
+                      </Text>
+                      <Pressable
+                        onPress={() => handleMoveSet(exIdx, sIdx, sIdx - 1)}
+                        disabled={sIdx === 0}
+                        hitSlop={4}
+                        style={{ opacity: sIdx === 0 ? 0.2 : 0.8, padding: 2 }}
+                        accessibilityLabel="Move set up"
+                      >
+                        <Ionicons name="chevron-up" size={14} color={theme.text} />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => handleMoveSet(exIdx, sIdx, sIdx + 1)}
+                        disabled={sIdx === item.sets.length - 1}
+                        hitSlop={4}
+                        style={{ opacity: sIdx === item.sets.length - 1 ? 0.2 : 0.8, padding: 2 }}
+                        accessibilityLabel="Move set down"
+                      >
+                        <Ionicons name="chevron-down" size={14} color={theme.text} />
+                      </Pressable>
+                    </View>
 
                     <View style={styles.cell}>
                       <Input

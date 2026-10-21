@@ -109,6 +109,8 @@ function RootNavigator() {
         }}
       >
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="workout/[id]" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="records/index" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/index" />
         <Stack.Screen name="settings/appearance" options={{ animation: 'slide_from_right' }} />
       </Stack>

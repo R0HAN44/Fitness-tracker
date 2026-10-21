@@ -41,6 +41,22 @@ export default function ProfileScreen() {
             styles.menuItem,
             pressed && styles.menuItemPressed,
           ]}
+          onPress={() => router.push('/records' as any)}
+          accessibilityRole="button"
+          accessibilityLabel="Personal Records"
+        >
+          <View style={styles.menuIconWrap}>
+            <Ionicons name="trophy-outline" size={20} color={theme.prGold} />
+          </View>
+          <Text variant="body" style={styles.menuLabel}>Personal Records</Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.menuItem,
+            pressed && styles.menuItemPressed,
+          ]}
           onPress={() => router.push('/settings')}
           accessibilityRole="button"
           accessibilityLabel="Settings"

@@ -314,24 +314,6 @@ export const bodyMeasurementEntries = sqliteTable(
   ],
 );
 
-// ────────────────────────────────────────────────────────────────────
-// Progress photos
-// ────────────────────────────────────────────────────────────────────
-
-export const progressPhotos = sqliteTable(
-  'progress_photos',
-  {
-    id: text('id').primaryKey(),
-    filename: text('filename').notNull(), // filename only; full path resolved at runtime
-    takenAt: text('taken_at').notNull(),
-    label: text('label'), // front, side, back
-    notes: text('notes'),
-    workoutId: text('workout_id').references(() => workouts.id, { onDelete: 'set null' }),
-    createdAt: text('created_at').notNull(),
-    updatedAt: text('updated_at').notNull(),
-    deletedAt: text('deleted_at'),
-  },
-);
 
 // ────────────────────────────────────────────────────────────────────
 // Settings (singleton row, id = 'default')

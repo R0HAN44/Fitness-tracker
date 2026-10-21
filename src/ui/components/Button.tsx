@@ -9,7 +9,7 @@
  */
 
 import React from 'react';
-import { Pressable, type PressableProps, ActivityIndicator, View } from 'react-native';
+import { Pressable, type PressableProps, ActivityIndicator, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Text } from '../typography/Text';
 import { useTheme } from '../theme/ThemeProvider';
 import { createStyles } from '../theme/createStyles';
@@ -27,6 +27,7 @@ export interface ButtonProps extends Omit<PressableProps, 'style' | 'children'> 
   icon?: React.ReactNode;
   fullWidth?: boolean;
   haptic?: boolean;
+  style?: StyleProp<ViewStyle>;
 }
 
 export function Button({
@@ -39,6 +40,7 @@ export function Button({
   haptic = true,
   disabled,
   onPress,
+  style,
   ...rest
 }: ButtonProps) {
   const styles = useStyles();
@@ -80,6 +82,7 @@ export function Button({
           opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
         },
         fullWidth && styles.fullWidth,
+        style,
       ]}
       disabled={disabled || loading}
       onPress={handlePress}

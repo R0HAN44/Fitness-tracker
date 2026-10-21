@@ -16,6 +16,8 @@ import {
   exercisePersonalRecords,
   settings,
   supersetGroups,
+  type PrType,
+  type SetType,
 } from '../schema';
 import { generateId as uuid, now } from '../../lib/uuid';
 import {
@@ -27,6 +29,7 @@ import {
 } from '../../domain/prDetection';
 import { calculateWorkoutVolume } from '../../domain/calc';
 import { getNextSupersetLabel } from '../../domain/supersets';
+import { compareExerciseSessions } from '../../domain/comparison';
 import type { ExerciseRow } from './exercises';
 
 export type WorkoutRow = typeof workouts.$inferSelect;
@@ -896,4 +899,831 @@ function getDefaultWorkoutTitle(): string {
   if (hour < 12) return 'Morning Workout';
   if (hour < 17) return 'Afternoon Workout';
   return 'Evening Workout';
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Completed Workouts & History Queries
+// ────────────────────────────────────────────────────────────────────
+
+export interface CompletedWorkoutSummary {
+  id: string;
+  title: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  durationSeconds: number | null;
+  notes: string | null;
+  totalVolumeKg: number | null;
+  prCount: number;
+  exerciseSummaries: Array<{
+    exerciseId: string;
+    name: string;
+    setCount: number;
+    bestSetSummary: string | null;
+  }>;
+}
+
+export function getCompletedWorkouts(options?: {
+  date?: string; // YYYY-MM-DD filter
+  limit?: number;
+  offset?: number;
+}): CompletedWorkoutSummary[] {
+  const db = getDb();
+
+  let query = db
+    .select()
+    .from(workouts)
+    .where(and(eq(workouts.status, 'completed'), isNull(workouts.deletedAt)))
+    .orderBy(desc(workouts.startedAt));
+
+  const rows = query.all();
+
+  const filteredRows = options?.date
+    ? rows.filter((w) => w.startedAt.slice(0, 10) === options.date)
+    : rows;
+
+  const paginated = options?.limit
+    ? filteredRows.slice(options.offset ?? 0, (options.offset ?? 0) + options.limit)
+    : filteredRows;
+
+  const summaries: CompletedWorkoutSummary[] = [];
+
+  for (const w of paginated) {
+    const weRows = db
+      .select({
+        id: workoutExercises.id,
+        exerciseId: workoutExercises.exerciseId,
+        name: exercises.name,
+      })
+      .from(workoutExercises)
+      .innerJoin(exercises, eq(workoutExercises.exerciseId, exercises.id))
+      .where(and(eq(workoutExercises.workoutId, w.id), isNull(workoutExercises.deletedAt)))
+      .orderBy(asc(workoutExercises.sortOrder))
+      .all();
+
+    const exSummaries: CompletedWorkoutSummary['exerciseSummaries'] = [];
+    const allWorkoutSetIds: string[] = [];
+
+    for (const we of weRows) {
+      const sets = db
+        .select()
+        .from(workoutSets)
+        .where(
+          and(
+            eq(workoutSets.workoutExerciseId, we.id),
+            eq(workoutSets.isCompleted, true),
+            isNull(workoutSets.deletedAt),
+          ),
+        )
+        .orderBy(asc(workoutSets.setIndex))
+        .all();
+
+      for (const s of sets) {
+        allWorkoutSetIds.push(s.id);
+      }
+
+      // Best set calculation (heaviest completed set)
+      let bestSetText: string | null = null;
+      let maxWeight = -1;
+      let maxReps = -1;
+
+      for (const s of sets) {
+        const wt = s.weightKg ?? 0;
+        const reps = s.reps ?? 0;
+        if (wt > maxWeight || (wt === maxWeight && reps > maxReps)) {
+          maxWeight = wt;
+          maxReps = reps;
+        }
+      }
+
+      if (maxWeight > 0) {
+        bestSetText = `${maxWeight} kg × ${maxReps}`;
+      } else if (maxReps > 0) {
+        bestSetText = `${maxReps} reps`;
+      }
+
+      exSummaries.push({
+        exerciseId: we.exerciseId,
+        name: we.name,
+        setCount: sets.length,
+        bestSetSummary: bestSetText,
+      });
+    }
+
+    // PR count in this workout
+    let prCount = 0;
+    if (allWorkoutSetIds.length > 0) {
+      const prs = db
+        .select({ id: exercisePersonalRecords.id })
+        .from(exercisePersonalRecords)
+        .where(isNull(exercisePersonalRecords.deletedAt))
+        .all();
+
+      const setSet = new Set(allWorkoutSetIds);
+      const prsForWorkout = prs.filter((p) => {
+        const fullPr = db
+          .select({ workoutSetId: exercisePersonalRecords.workoutSetId })
+          .from(exercisePersonalRecords)
+          .where(eq(exercisePersonalRecords.id, p.id))
+          .get();
+        return fullPr && setSet.has(fullPr.workoutSetId);
+      });
+      prCount = prsForWorkout.length;
+    }
+
+    summaries.push({
+      id: w.id,
+      title: w.title,
+      startedAt: w.startedAt,
+      finishedAt: w.finishedAt,
+      durationSeconds: w.durationSeconds,
+      notes: w.notes,
+      totalVolumeKg: w.totalVolumeKg,
+      prCount,
+      exerciseSummaries: exSummaries,
+    });
+  }
+
+  return summaries;
+}
+
+/**
+ * Returns distinct YYYY-MM-DD dates that contain completed workouts.
+ */
+export function getCompletedWorkoutDates(): string[] {
+  const db = getDb();
+  const rows = db
+    .select({ startedAt: workouts.startedAt })
+    .from(workouts)
+    .where(and(eq(workouts.status, 'completed'), isNull(workouts.deletedAt)))
+    .orderBy(desc(workouts.startedAt))
+    .all();
+
+  const set = new Set<string>();
+  for (const r of rows) {
+    if (r.startedAt) {
+      set.add(r.startedAt.slice(0, 10));
+    }
+  }
+  return Array.from(set);
+}
+
+export interface DetailedWorkoutExercise extends FullWorkoutExercise {
+  supersetLabel?: string | null;
+  setsWithPRs: Array<
+    FullWorkoutSet & {
+      prTypes: PrType[];
+    }
+  >;
+}
+
+export interface CompletedWorkoutDetail extends WorkoutRow {
+  exercises: DetailedWorkoutExercise[];
+}
+
+/**
+ * Get complete workout details including exercises, sets, supersets, and PR badges.
+ */
+export function getCompletedWorkoutDetail(workoutId: string): CompletedWorkoutDetail | null {
+  const db = getDb();
+
+  const wRow = db
+    .select()
+    .from(workouts)
+    .where(and(eq(workouts.id, workoutId), isNull(workouts.deletedAt)))
+    .get();
+
+  if (!wRow) return null;
+
+  const weRows = db
+    .select()
+    .from(workoutExercises)
+    .where(and(eq(workoutExercises.workoutId, wRow.id), isNull(workoutExercises.deletedAt)))
+    .orderBy(asc(workoutExercises.sortOrder))
+    .all();
+
+  const detailedExercises: DetailedWorkoutExercise[] = [];
+
+  for (const we of weRows) {
+    const exRow = db
+      .select()
+      .from(exercises)
+      .where(eq(exercises.id, we.exerciseId))
+      .get();
+
+    if (!exRow) continue;
+
+    let supersetLabel: string | null = null;
+    if (we.supersetGroupId) {
+      const sg = db
+        .select({ label: supersetGroups.label })
+        .from(supersetGroups)
+        .where(eq(supersetGroups.id, we.supersetGroupId))
+        .get();
+      supersetLabel = sg?.label ?? null;
+    }
+
+    const sets = db
+      .select()
+      .from(workoutSets)
+      .where(
+        and(
+          eq(workoutSets.workoutExerciseId, we.id),
+          isNull(workoutSets.deletedAt),
+        ),
+      )
+      .orderBy(asc(workoutSets.setIndex))
+      .all();
+
+    const setsWithPRs = sets.map((s) => {
+      const prRows = db
+        .select({ recordType: exercisePersonalRecords.recordType })
+        .from(exercisePersonalRecords)
+        .where(
+          and(
+            eq(exercisePersonalRecords.workoutSetId, s.id),
+            isNull(exercisePersonalRecords.deletedAt),
+          ),
+        )
+        .all();
+
+      return {
+        ...s,
+        prTypes: prRows.map((r) => r.recordType as PrType),
+      };
+    });
+
+    detailedExercises.push({
+      ...we,
+      exercise: exRow,
+      sets,
+      supersetLabel,
+      setsWithPRs,
+    });
+  }
+
+  return {
+    ...wRow,
+    exercises: detailedExercises,
+  };
+}
+
+/**
+ * Update completed workout metadata (title, date/time, notes).
+ */
+export function updateCompletedWorkout(
+  workoutId: string,
+  data: {
+    title?: string;
+    startedAt?: string;
+    notes?: string;
+  },
+): void {
+  const db = getDb();
+  const timestamp = now();
+
+  const updates: Record<string, any> = { updatedAt: timestamp };
+  if (data.title !== undefined) updates.title = data.title;
+  if (data.startedAt !== undefined) updates.startedAt = data.startedAt;
+  if (data.notes !== undefined) updates.notes = data.notes;
+
+  db.update(workouts).set(updates).where(eq(workouts.id, workoutId)).run();
+}
+
+/**
+ * Update a set in a completed workout and recalculate volume and PRs.
+ */
+export function updateCompletedWorkoutSet(
+  setId: string,
+  data: {
+    weightKg?: number | null;
+    reps?: number | null;
+    rpe?: number | null;
+    setType?: SetType;
+    isCompleted?: boolean;
+    durationSeconds?: number | null;
+    distanceMeters?: number | null;
+  },
+): void {
+  const db = getDb();
+  const timestamp = now();
+
+  // Find workoutExercise and workout
+  const setRow = db
+    .select({
+      workoutExerciseId: workoutSets.workoutExerciseId,
+    })
+    .from(workoutSets)
+    .where(eq(workoutSets.id, setId))
+    .get();
+
+  if (!setRow) return;
+
+  const weRow = db
+    .select({
+      workoutId: workoutExercises.workoutId,
+      exerciseId: workoutExercises.exerciseId,
+    })
+    .from(workoutExercises)
+    .where(eq(workoutExercises.id, setRow.workoutExerciseId))
+    .get();
+
+  if (!weRow) return;
+
+  const updates: Record<string, any> = { updatedAt: timestamp };
+  if (data.weightKg !== undefined) updates.weightKg = data.weightKg;
+  if (data.reps !== undefined) updates.reps = data.reps;
+  if (data.rpe !== undefined) updates.rpe = data.rpe;
+  if (data.setType !== undefined) updates.setType = data.setType;
+  if (data.isCompleted !== undefined) {
+    updates.isCompleted = data.isCompleted;
+    if (data.isCompleted) updates.completedAt = timestamp;
+  }
+  if (data.durationSeconds !== undefined) updates.durationSeconds = data.durationSeconds;
+  if (data.distanceMeters !== undefined) updates.distanceMeters = data.distanceMeters;
+
+  db.update(workoutSets).set(updates).where(eq(workoutSets.id, setId)).run();
+
+  // Recalculate workout volume
+  recalculateWorkoutTotalVolume(weRow.workoutId);
+
+  // Recompute PRs for this exercise
+  recomputeExercisePRsAfterEdit(weRow.exerciseId);
+}
+
+/**
+ * Add a set to an exercise in a completed workout.
+ */
+export function addSetToCompletedWorkout(
+  workoutExerciseId: string,
+  data?: {
+    weightKg?: number | null;
+    reps?: number | null;
+    setType?: SetType;
+  },
+): void {
+  const db = getDb();
+  const timestamp = now();
+
+  const weRow = db
+    .select({ workoutId: workoutExercises.workoutId, exerciseId: workoutExercises.exerciseId })
+    .from(workoutExercises)
+    .where(eq(workoutExercises.id, workoutExerciseId))
+    .get();
+
+  if (!weRow) return;
+
+  const existingSets = db
+    .select()
+    .from(workoutSets)
+    .where(
+      and(
+        eq(workoutSets.workoutExerciseId, workoutExerciseId),
+        isNull(workoutSets.deletedAt),
+      ),
+    )
+    .all();
+
+  const nextIndex = existingSets.length + 1;
+  const lastSet = existingSets[existingSets.length - 1];
+
+  const id = uuid();
+  db.insert(workoutSets)
+    .values({
+      id,
+      workoutExerciseId,
+      setIndex: nextIndex,
+      setType: data?.setType ?? lastSet?.setType ?? 'normal',
+      weightKg: data?.weightKg ?? lastSet?.weightKg ?? 20,
+      reps: data?.reps ?? lastSet?.reps ?? 10,
+      isCompleted: true,
+      completedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+
+  recalculateWorkoutTotalVolume(weRow.workoutId);
+  recomputeExercisePRsAfterEdit(weRow.exerciseId);
+}
+
+/**
+ * Delete a set from a completed workout.
+ */
+export function deleteSetFromCompletedWorkout(setId: string): void {
+  const db = getDb();
+  const timestamp = now();
+
+  const setRow = db
+    .select({ workoutExerciseId: workoutSets.workoutExerciseId })
+    .from(workoutSets)
+    .where(eq(workoutSets.id, setId))
+    .get();
+
+  if (!setRow) return;
+
+  const weRow = db
+    .select({ workoutId: workoutExercises.workoutId, exerciseId: workoutExercises.exerciseId })
+    .from(workoutExercises)
+    .where(eq(workoutExercises.id, setRow.workoutExerciseId))
+    .get();
+
+  if (!weRow) return;
+
+  db.update(workoutSets)
+    .set({ deletedAt: timestamp, updatedAt: timestamp })
+    .where(eq(workoutSets.id, setId))
+    .run();
+
+  // Renumber remaining sets
+  const remaining = db
+    .select()
+    .from(workoutSets)
+    .where(
+      and(
+        eq(workoutSets.workoutExerciseId, setRow.workoutExerciseId),
+        isNull(workoutSets.deletedAt),
+      ),
+    )
+    .orderBy(asc(workoutSets.setIndex))
+    .all();
+
+  for (let i = 0; i < remaining.length; i++) {
+    if (remaining[i].setIndex !== i + 1) {
+      db.update(workoutSets)
+        .set({ setIndex: i + 1, updatedAt: timestamp })
+        .where(eq(workoutSets.id, remaining[i].id))
+        .run();
+    }
+  }
+
+  recalculateWorkoutTotalVolume(weRow.workoutId);
+  recomputeExercisePRsAfterEdit(weRow.exerciseId);
+}
+
+/**
+ * Delete a completed workout and all its contents, and recompute PRs for all affected exercises.
+ */
+export function deleteCompletedWorkout(workoutId: string): void {
+  const db = getDb();
+  const timestamp = now();
+
+  // Collect affected exercises
+  const weRows = db
+    .select({ exerciseId: workoutExercises.exerciseId })
+    .from(workoutExercises)
+    .where(eq(workoutExercises.workoutId, workoutId))
+    .all();
+
+  const affectedExerciseIds = Array.from(new Set(weRows.map((we) => we.exerciseId)));
+
+  // Soft-delete workout, exercises, sets
+  db.update(workoutSets)
+    .set({ deletedAt: timestamp, updatedAt: timestamp })
+    .where(
+      and(
+        isNull(workoutSets.deletedAt),
+      ),
+    )
+    .run();
+
+  db.update(workoutExercises)
+    .set({ deletedAt: timestamp, updatedAt: timestamp })
+    .where(eq(workoutExercises.workoutId, workoutId))
+    .run();
+
+  db.update(workouts)
+    .set({ deletedAt: timestamp, status: 'discarded', updatedAt: timestamp })
+    .where(eq(workouts.id, workoutId))
+    .run();
+
+  // Recompute PRs for each affected exercise
+  for (const exId of affectedExerciseIds) {
+    recomputeExercisePRsAfterEdit(exId);
+  }
+}
+
+/**
+ * Recalculate and update the total_volume_kg field on a workout.
+ */
+function recalculateWorkoutTotalVolume(workoutId: string): void {
+  const db = getDb();
+  const weRows = db
+    .select({ id: workoutExercises.id, exerciseId: workoutExercises.exerciseId })
+    .from(workoutExercises)
+    .where(and(eq(workoutExercises.workoutId, workoutId), isNull(workoutExercises.deletedAt)))
+    .all();
+
+  let totalVol = 0;
+  for (const we of weRows) {
+    const ex = db.select().from(exercises).where(eq(exercises.id, we.exerciseId)).get();
+    const sets = db
+      .select()
+      .from(workoutSets)
+      .where(
+        and(
+          eq(workoutSets.workoutExerciseId, we.id),
+          eq(workoutSets.isCompleted, true),
+          isNull(workoutSets.deletedAt),
+        ),
+      )
+      .all();
+
+    totalVol += calculateWorkoutVolume(sets, ex?.exerciseType ?? 'weight_reps');
+  }
+
+  db.update(workouts)
+    .set({ totalVolumeKg: Math.round(totalVol * 100) / 100, updatedAt: now() })
+    .where(eq(workouts.id, workoutId))
+    .run();
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Exercise History, PRs, and Comparison Queries
+// ────────────────────────────────────────────────────────────────────
+
+export interface ExerciseHistorySet {
+  id: string;
+  setIndex: number;
+  setType: string;
+  weightKg: number | null;
+  reps: number | null;
+  rpe: number | null;
+  durationSeconds: number | null;
+  distanceMeters: number | null;
+  isCompleted: boolean;
+  estimated1rm: number;
+  prBadges: string[];
+}
+
+export interface ExerciseHistorySession {
+  workoutId: string;
+  workoutTitle: string;
+  workoutDate: string;
+  sets: ExerciseHistorySet[];
+  totalVolumeKg: number;
+  bestSet: { weightKg: number; reps: number } | null;
+}
+
+/**
+ * Returns complete history of an exercise grouped by workout session, ordered newest first.
+ */
+export function getExerciseHistory(exerciseId: string): ExerciseHistorySession[] {
+  const db = getDb();
+
+  const weRows = db
+    .select({
+      id: workoutExercises.id,
+      workoutId: workoutExercises.workoutId,
+      workoutTitle: workouts.title,
+      workoutDate: workouts.startedAt,
+    })
+    .from(workoutExercises)
+    .innerJoin(workouts, eq(workoutExercises.workoutId, workouts.id))
+    .where(
+      and(
+        eq(workoutExercises.exerciseId, exerciseId),
+        eq(workouts.status, 'completed'),
+        isNull(workoutExercises.deletedAt),
+        isNull(workouts.deletedAt),
+      ),
+    )
+    .orderBy(desc(workouts.startedAt))
+    .all();
+
+  const sessions: ExerciseHistorySession[] = [];
+
+  for (const we of weRows) {
+    const sets = db
+      .select()
+      .from(workoutSets)
+      .where(
+        and(
+          eq(workoutSets.workoutExerciseId, we.id),
+          eq(workoutSets.isCompleted, true),
+          isNull(workoutSets.deletedAt),
+        ),
+      )
+      .orderBy(asc(workoutSets.setIndex))
+      .all();
+
+    if (sets.length === 0) continue;
+
+    let totalVol = 0;
+    let maxWeight = -1;
+    let maxReps = -1;
+
+    const historySets: ExerciseHistorySet[] = [];
+
+    for (const s of sets) {
+      const wt = s.weightKg ?? 0;
+      const reps = s.reps ?? 0;
+      const vol = calculateWorkoutVolume([s], 'weight_reps');
+      totalVol += vol;
+
+      if (wt > maxWeight || (wt === maxWeight && reps > maxReps)) {
+        maxWeight = wt;
+        maxReps = reps;
+      }
+
+      // Check PRs for this set
+      const prs = db
+        .select({ recordType: exercisePersonalRecords.recordType })
+        .from(exercisePersonalRecords)
+        .where(
+          and(
+            eq(exercisePersonalRecords.workoutSetId, s.id),
+            isNull(exercisePersonalRecords.deletedAt),
+          ),
+        )
+        .all();
+
+      const badgeNames: string[] = [];
+      for (const pr of prs) {
+        if (pr.recordType === 'max_weight') badgeNames.push('Max Weight');
+        else if (pr.recordType === 'best_1rm') badgeNames.push('Best 1RM');
+        else if (pr.recordType === 'best_set_volume') badgeNames.push('Set Vol');
+        else if (pr.recordType === 'max_reps_at_weight') badgeNames.push('Max Reps');
+      }
+
+      historySets.push({
+        id: s.id,
+        setIndex: s.setIndex,
+        setType: s.setType,
+        weightKg: s.weightKg,
+        reps: s.reps,
+        rpe: s.rpe,
+        durationSeconds: s.durationSeconds,
+        distanceMeters: s.distanceMeters,
+        isCompleted: s.isCompleted,
+        estimated1rm: Math.round(calculateWorkoutVolume([s], 'weight_reps') > 0 ? (s.weightKg ?? 0) * (1 + (s.reps ?? 0) / 30) : 0),
+        prBadges: badgeNames,
+      });
+    }
+
+    sessions.push({
+      workoutId: we.workoutId,
+      workoutTitle: we.workoutTitle ?? 'Workout',
+      workoutDate: we.workoutDate,
+      sets: historySets,
+      totalVolumeKg: Math.round(totalVol * 100) / 100,
+      bestSet: maxWeight > 0 ? { weightKg: maxWeight, reps: maxReps } : null,
+    });
+  }
+
+  return sessions;
+}
+
+export interface ExercisePRItem {
+  id: string;
+  recordType: PrType;
+  value: number;
+  weightKg: number | null;
+  achievedAt: string;
+  workoutSetId: string;
+  reps?: number | null;
+}
+
+/**
+ * Returns current personal records for an exercise.
+ */
+export function getExercisePRs(exerciseId: string): ExercisePRItem[] {
+  const db = getDb();
+
+  const prRows = db
+    .select({
+      id: exercisePersonalRecords.id,
+      recordType: exercisePersonalRecords.recordType,
+      value: exercisePersonalRecords.value,
+      weightKg: exercisePersonalRecords.weightKg,
+      achievedAt: exercisePersonalRecords.achievedAt,
+      workoutSetId: exercisePersonalRecords.workoutSetId,
+      reps: workoutSets.reps,
+    })
+    .from(exercisePersonalRecords)
+    .innerJoin(workoutSets, eq(exercisePersonalRecords.workoutSetId, workoutSets.id))
+    .where(
+      and(
+        eq(exercisePersonalRecords.exerciseId, exerciseId),
+        eq(exercisePersonalRecords.isCurrent, true),
+        isNull(exercisePersonalRecords.deletedAt),
+      ),
+    )
+    .orderBy(asc(exercisePersonalRecords.recordType))
+    .all();
+
+  return prRows.map((r) => ({
+    id: r.id,
+    recordType: r.recordType as PrType,
+    value: r.value,
+    weightKg: r.weightKg,
+    achievedAt: r.achievedAt,
+    workoutSetId: r.workoutSetId,
+    reps: r.reps,
+  }));
+}
+
+export interface GlobalPRItem {
+  id: string;
+  exerciseId: string;
+  exerciseName: string;
+  primaryMuscle: string;
+  equipment: string;
+  recordType: PrType;
+  value: number;
+  weightKg: number | null;
+  reps: number | null;
+  achievedAt: string;
+}
+
+/**
+ * Returns all current PRs across all exercises for the Personal Records Board.
+ */
+export function getAllPersonalRecords(): GlobalPRItem[] {
+  const db = getDb();
+
+  const rows = db
+    .select({
+      id: exercisePersonalRecords.id,
+      exerciseId: exercisePersonalRecords.exerciseId,
+      exerciseName: exercises.name,
+      primaryMuscle: exercises.primaryMuscle,
+      equipment: exercises.equipment,
+      recordType: exercisePersonalRecords.recordType,
+      value: exercisePersonalRecords.value,
+      weightKg: exercisePersonalRecords.weightKg,
+      achievedAt: exercisePersonalRecords.achievedAt,
+      reps: workoutSets.reps,
+    })
+    .from(exercisePersonalRecords)
+    .innerJoin(exercises, eq(exercisePersonalRecords.exerciseId, exercises.id))
+    .innerJoin(workoutSets, eq(exercisePersonalRecords.workoutSetId, workoutSets.id))
+    .where(
+      and(
+        eq(exercisePersonalRecords.isCurrent, true),
+        isNull(exercisePersonalRecords.deletedAt),
+      ),
+    )
+    .orderBy(desc(exercisePersonalRecords.achievedAt))
+    .all();
+
+  return rows.map((r) => ({
+    id: r.id,
+    exerciseId: r.exerciseId,
+    exerciseName: r.exerciseName,
+    primaryMuscle: r.primaryMuscle,
+    equipment: r.equipment,
+    recordType: r.recordType as PrType,
+    value: r.value,
+    weightKg: r.weightKg,
+    reps: r.reps,
+    achievedAt: r.achievedAt,
+  }));
+}
+
+/**
+ * Compares two most recent sessions for an exercise (or session for workoutId vs previous session).
+ */
+export function getPastSessionComparisonForExercise(
+  exerciseId: string,
+  currentWorkoutId?: string,
+) {
+  const history = getExerciseHistory(exerciseId);
+  if (history.length < 2) return null;
+
+  let currentIndex = 0;
+  if (currentWorkoutId) {
+    const idx = history.findIndex((h) => h.workoutId === currentWorkoutId);
+    if (idx !== -1) currentIndex = idx;
+  }
+
+  const currentSession = history[currentIndex];
+  const previousSession = history[currentIndex + 1];
+
+  if (!currentSession || !previousSession) return null;
+
+  const currentSets = currentSession.sets.map((s) => ({
+    setIndex: s.setIndex,
+    weightKg: s.weightKg,
+    reps: s.reps,
+    setType: s.setType,
+    isCompleted: s.isCompleted,
+  }));
+
+  const previousSets = previousSession.sets.map((s) => ({
+    setIndex: s.setIndex,
+    weightKg: s.weightKg,
+    reps: s.reps,
+    setType: s.setType,
+    isCompleted: s.isCompleted,
+  }));
+
+  const comparison = compareExerciseSessions(currentSets, previousSets);
+
+  return {
+    currentSessionDate: currentSession.workoutDate,
+    previousSessionDate: previousSession.workoutDate,
+    currentSessionTitle: currentSession.workoutTitle,
+    previousSessionTitle: previousSession.workoutTitle,
+    ...comparison,
+  };
 }
