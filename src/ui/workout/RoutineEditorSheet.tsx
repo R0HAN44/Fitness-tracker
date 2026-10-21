@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, Alert, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../typography/Text';
 import { Sheet } from '../components/Sheet';
@@ -33,6 +33,8 @@ export interface RoutineEditorSheetProps {
   routineId?: string | null;
   onSave?: (routine: FullRoutine) => void;
 }
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 interface RoutineExerciseDraft {
   exercise: ExerciseRow;
@@ -271,17 +273,26 @@ export function RoutineEditorSheet({
       onClose={onClose}
       title={routineId ? 'Edit Routine' : 'New Routine'}
       subtitle={routineId ? 'Update your routine template' : 'Create a reusable workout blueprint'}
+      rightAction={
+        <Button
+          title={routineId ? 'Save' : 'Create'}
+          size="sm"
+          variant="primary"
+          onPress={handleSave}
+        />
+      }
       footer={
         <Button
-          title={routineId ? 'Update Routine' : 'Create Routine'}
+          title={routineId ? 'Save Routine' : 'Create Routine'}
           variant="primary"
           size="lg"
           onPress={handleSave}
           fullWidth
         />
       }
+      containerStyle={{ height: Math.min(680, SCREEN_HEIGHT * 0.85) }}
     >
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
         <Input
           label="Routine Name *"
           placeholder="e.g. Chest & Triceps Hypertrophy"

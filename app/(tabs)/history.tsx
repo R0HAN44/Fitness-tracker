@@ -5,7 +5,7 @@
  *   3. Direct navigation to WorkoutDetailScreen and PR Board
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, ScrollView, FlatList, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -37,6 +37,7 @@ export default function HistoryScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [workoutDatesSet, setWorkoutDatesSet] = useState<Set<string>>(new Set());
+  const isFetchingRef = useRef(false);
 
   // Calendar navigation state
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -44,9 +45,11 @@ export default function HistoryScreen() {
     const today = new Date();
     return today.toISOString().slice(0, 10);
   });
+  const [dateWorkouts, setDateWorkouts] = useState<CompletedWorkoutSummary[]>([]);
 
   const reloadData = useCallback(() => {
     try {
+      isFetchingRef.current = false;
       const initial = getCompletedWorkouts({ limit: PAGE_SIZE, offset: 0 });
       setWorkoutsList(initial);
       setPage(1);
@@ -60,11 +63,16 @@ export default function HistoryScreen() {
   }, []);
 
   const loadMoreWorkouts = useCallback(() => {
-    if (!hasMore || viewMode !== 'list') return;
+    if (isFetchingRef.current || !hasMore || viewMode !== 'list') return;
+    isFetchingRef.current = true;
     try {
       const nextPage = getCompletedWorkouts({ limit: PAGE_SIZE, offset: page * PAGE_SIZE });
       if (nextPage.length > 0) {
-        setWorkoutsList((prev) => [...prev, ...nextPage]);
+        setWorkoutsList((prev) => {
+          const existingIds = new Set(prev.map((w) => w.id));
+          const uniqueNew = nextPage.filter((w) => !existingIds.has(w.id));
+          return [...prev, ...uniqueNew];
+        });
         setPage((p) => p + 1);
         setHasMore(nextPage.length === PAGE_SIZE);
       } else {
@@ -72,8 +80,21 @@ export default function HistoryScreen() {
       }
     } catch (e) {
       console.error('Error loading more workouts:', e);
+    } finally {
+      isFetchingRef.current = false;
     }
   }, [hasMore, page, viewMode]);
+
+  useEffect(() => {
+    if (viewMode === 'calendar' && selectedCalendarDate) {
+      try {
+        const forDate = getCompletedWorkouts({ date: selectedCalendarDate });
+        setDateWorkouts(forDate);
+      } catch (e) {
+        console.error('Error loading date workouts:', e);
+      }
+    }
+  }, [viewMode, selectedCalendarDate]);
 
   useFocusEffect(
     useCallback(() => {
@@ -139,7 +160,6 @@ export default function HistoryScreen() {
 
   const renderWorkoutCard = (workout: CompletedWorkoutSummary) => (
     <Pressable
-      key={workout.id}
       onPress={() => handleOpenWorkout(workout.id)}
       style={({ pressed }) => [
         styles.workoutCard,
@@ -353,14 +373,18 @@ export default function HistoryScreen() {
             </Text>
           </View>
 
-          {workoutsOnSelectedDate.length === 0 ? (
+          {dateWorkouts.length === 0 ? (
             <View style={[styles.emptyDateCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text variant="bodySm" color="textMuted" center>
                 No workout recorded on this date.
               </Text>
             </View>
           ) : (
-            workoutsOnSelectedDate.map(renderWorkoutCard)
+            dateWorkouts.map((w) => (
+              <View key={w.id} style={{ marginBottom: spacing.sm }}>
+                {renderWorkoutCard(w)}
+              </View>
+            ))
           )}
         </ScrollView>
       )}

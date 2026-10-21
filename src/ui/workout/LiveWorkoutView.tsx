@@ -23,6 +23,7 @@ import {
   Alert,
   TextInput,
   Switch,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../typography/Text';
@@ -43,6 +44,8 @@ import { formatDuration, formatWeight, toDisplayWeight, toDatabaseWeight } from 
 import { calculateWorkoutVolume } from '../../domain/calc';
 import { lightImpact, mediumImpact, heavyImpact, notificationSuccess } from '../../lib/haptics';
 import { Ionicons } from '@expo/vector-icons';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 import {
   getPreviousSetPerformance,
   type FullWorkoutExercise,
@@ -444,7 +447,8 @@ export function LiveWorkoutView() {
         title="Finish Workout"
         subtitle="Great work! Save your session."
       >
-        <ScrollView contentContainerStyle={styles.finishContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.finishContainer}>
+          <ScrollView contentContainerStyle={styles.finishContent} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
           <View
             style={[
               styles.finishStats,
@@ -551,6 +555,7 @@ export function LiveWorkoutView() {
             />
           </View>
         </ScrollView>
+        </View>
       </Sheet>
 
       {/* Discard Workout Confirmation Sheet */}
@@ -1256,6 +1261,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radii.sm,
     marginTop: spacing.xs,
+  },
+  finishContainer: {
+    height: Math.min(620, SCREEN_HEIGHT * 0.78),
   },
   finishContent: {
     gap: spacing.base,

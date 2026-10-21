@@ -30,6 +30,7 @@ import * as Sharing from 'expo-sharing';
 import { Text } from '../../src/ui/typography/Text';
 import { Button } from '../../src/ui/components/Button';
 import { Sheet } from '../../src/ui/components/Sheet';
+import { ConfirmationSheet } from '../../src/ui/components/ConfirmationSheet';
 import { Input } from '../../src/ui/components/Input';
 import { SessionComparisonSheet } from '../../src/ui/workout/SessionComparisonSheet';
 import { useTheme } from '../../src/ui/theme/ThemeProvider';
@@ -68,6 +69,9 @@ export default function WorkoutDetailScreen() {
   const [showComparison, setShowComparison] = useState(false);
   const [comparisonExerciseName, setComparisonExerciseName] = useState('');
   const [comparisonData, setComparisonData] = useState<any>(null);
+
+  // Delete Workout modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Sharing state
   const [isSharing, setIsSharing] = useState(false);
@@ -172,22 +176,8 @@ export default function WorkoutDetailScreen() {
   };
 
   const handleDeleteWorkoutPrompt = () => {
-    Alert.alert(
-      'Delete Workout?',
-      'Are you sure you want to delete this workout? Personal records will be recomputed automatically.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            lightImpact();
-            deleteCompletedWorkout(workout.id);
-            router.back();
-          },
-        },
-      ],
-    );
+    lightImpact();
+    setShowDeleteModal(true);
   };
 
   const handleSaveAsRoutine = () => {
@@ -552,6 +542,24 @@ export default function WorkoutDetailScreen() {
         onClose={() => setShowComparison(false)}
         exerciseName={comparisonExerciseName}
         comparison={comparisonData}
+      />
+
+      {/* Delete Workout Confirmation Sheet */}
+      <ConfirmationSheet
+        visible={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        title="Delete Workout?"
+        message="Are you sure you want to delete this workout? Personal records and training stats will be recomputed automatically."
+        confirmLabel="Delete Workout"
+        cancelLabel="Keep Workout"
+        destructive
+        icon="trash-outline"
+        onConfirm={() => {
+          lightImpact();
+          setShowDeleteModal(false);
+          deleteCompletedWorkout(workout.id);
+          router.back();
+        }}
       />
     </SafeAreaView>
   );

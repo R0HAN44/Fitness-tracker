@@ -21,10 +21,6 @@ import { spacing, radii, layout } from '../theme/tokens';
 import { lightImpact } from '../../lib/haptics';
 import { Ionicons } from '@expo/vector-icons';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
 export interface DraggableListItem {
   id: string;
 }

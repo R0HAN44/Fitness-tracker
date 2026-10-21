@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
 import { Sheet } from '../components/Sheet';
 import { Text } from '../typography/Text';
 import { useTheme } from '../theme/ThemeProvider';
@@ -27,6 +27,8 @@ export interface SessionComparisonSheetProps {
     previousSessionTitle?: string;
   }) | null;
 }
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 export function SessionComparisonSheet({
   visible,
@@ -55,7 +57,8 @@ export function SessionComparisonSheet({
       title="Session Comparison"
       subtitle={exerciseName}
     >
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
         {/* Session headers */}
         <View style={styles.sessionHeaderRow}>
           <View style={[styles.sessionBadge, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -192,12 +195,16 @@ export function SessionComparisonSheet({
             );
           })}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
     </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    height: Math.min(580, SCREEN_HEIGHT * 0.72),
+  },
   content: {
     paddingBottom: spacing['4xl'],
     gap: spacing.base,

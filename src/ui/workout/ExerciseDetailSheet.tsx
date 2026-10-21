@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, Alert, Dimensions } from 'react-native';
 import { Text } from '../typography/Text';
 import { Sheet } from '../components/Sheet';
 import { Button } from '../components/Button';
@@ -48,6 +48,8 @@ export interface ExerciseDetailSheetProps {
 
 type TabType = 'about' | 'history' | 'records' | 'charts';
 type ChartMetric = '1rm' | 'max_weight' | 'volume';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 export function ExerciseDetailSheet({
   exercise,
@@ -178,6 +180,7 @@ export function ExerciseDetailSheet({
         onClose={onClose}
         title={exercise.name}
         subtitle={exercise.isCustom ? 'Custom Exercise' : 'Built-in Exercise'}
+        containerStyle={{ height: Math.min(680, SCREEN_HEIGHT * 0.85) }}
       >
         <View style={styles.tabContainer}>
           <SegmentedControl

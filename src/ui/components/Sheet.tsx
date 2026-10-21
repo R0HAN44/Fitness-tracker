@@ -50,6 +50,7 @@ export interface SheetProps {
   subtitle?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  rightAction?: React.ReactNode;
   maxHeight?: number;
   containerStyle?: ViewStyle;
   scrollable?: boolean;
@@ -62,6 +63,7 @@ export function Sheet({
   subtitle,
   children,
   footer,
+  rightAction,
   maxHeight = SCREEN_HEIGHT * 0.85,
   containerStyle,
   scrollable = false,
@@ -210,7 +212,7 @@ export function Sheet({
             </View>
 
             {/* Header */}
-            {(title || subtitle) && (
+            {(title || subtitle || rightAction) && (
               <View style={styles.header}>
                 <View style={styles.headerTitles}>
                   {title && (
@@ -225,16 +227,20 @@ export function Sheet({
                   )}
                 </View>
 
-                <Pressable
-                  onPress={() => {
-                    lightImpact();
-                    closeSheet();
-                  }}
-                  hitSlop={12}
-                  style={styles.closeButton}
-                >
-                  <Ionicons name="close" size={22} color={theme.textMuted} />
-                </Pressable>
+                <View style={styles.headerActions}>
+                  {rightAction}
+                  <Pressable
+                    onPress={() => {
+                      lightImpact();
+                      closeSheet();
+                    }}
+                    hitSlop={12}
+                    style={styles.closeButton}
+                    accessibilityLabel="Close sheet"
+                  >
+                    <Ionicons name="close" size={22} color={theme.textMuted} />
+                  </Pressable>
+                </View>
               </View>
             )}
 
@@ -243,13 +249,20 @@ export function Sheet({
               <ScrollView
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
-                style={{ flex: 1 }}
+                style={{ flexShrink: 1 }}
                 contentContainerStyle={[styles.content, { paddingBottom: spacing.lg }]}
               >
                 {children}
               </ScrollView>
             ) : (
-              <View style={[styles.content, { flex: 1, minHeight: 0 }]}>{children}</View>
+              <View
+                style={[
+                  styles.content,
+                  (containerStyle as any)?.height ? { flex: 1, minHeight: 0 } : { flexShrink: 1 },
+                ]}
+              >
+                {children}
+              </View>
             )}
 
             {/* Pinned Footer */}
@@ -261,6 +274,7 @@ export function Sheet({
                     borderTopColor: theme.border,
                     backgroundColor: theme.elevated,
                     paddingBottom: Math.max(insets.bottom, spacing.base),
+                    flexShrink: 0,
                   },
                 ]}
               >
@@ -298,6 +312,7 @@ const styles = StyleSheet.create({
   handleContainer: {
     alignItems: 'center',
     paddingVertical: spacing.sm,
+    flexShrink: 0,
   },
   handle: {
     width: 36,
@@ -310,13 +325,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.sm,
+    flexShrink: 0,
   },
   headerTitles: {
     flex: 1,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 0,
+  },
   closeButton: {
     padding: spacing.xs,
-    marginLeft: spacing.sm,
   },
   content: {
     paddingHorizontal: spacing.base,
@@ -326,5 +347,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
+    flexShrink: 0,
   },
 });

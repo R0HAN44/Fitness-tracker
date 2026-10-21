@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, Alert, Dimensions } from 'react-native';
 import { Text } from '../typography/Text';
 import { Sheet } from '../components/Sheet';
 import { Button } from '../components/Button';
@@ -23,6 +23,8 @@ export interface CustomExerciseSheetProps {
   exerciseToEdit?: ExerciseRow | null;
   onSave?: (savedExercise: ExerciseRow) => void;
 }
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 export function CustomExerciseSheet({
   visible,
@@ -104,7 +106,8 @@ export function CustomExerciseSheet({
       title={exerciseToEdit ? 'Edit Exercise' : 'New Custom Exercise'}
       subtitle={exerciseToEdit ? 'Update exercise properties' : 'Create a custom exercise for your library'}
     >
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
         <Input
           label="Exercise Name *"
           placeholder="e.g. Bulgarian Split Squat"
@@ -252,12 +255,16 @@ export function CustomExerciseSheet({
             fullWidth
           />
         </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
     </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    height: Math.min(620, SCREEN_HEIGHT * 0.72),
+  },
   content: {
     paddingBottom: spacing['4xl'],
     gap: spacing.base,
