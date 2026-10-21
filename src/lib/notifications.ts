@@ -45,7 +45,6 @@ export async function requestNotificationPermissions(): Promise<boolean> {
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#C6FF3D',
-        sound: 'default',
       });
     }
 
@@ -70,7 +69,7 @@ export async function scheduleRestTimerNotification(seconds: number): Promise<st
       content: {
         title: 'Rest Finished! ⏰',
         body: 'Time to crush your next set.',
-        sound: 'default',
+        sound: true,
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
