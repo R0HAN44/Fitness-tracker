@@ -187,6 +187,32 @@ export default function ProfileScreen() {
             ]}
             onPress={() => {
               lightImpact();
+              router.push('/reports' as any);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Reports & Insights"
+          >
+            <View style={[styles.menuIconWrap, { backgroundColor: theme.elevated }]}>
+              <Ionicons name="stats-chart-outline" size={20} color={theme.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text variant="body" style={{ fontWeight: '600' }}>Reports & Insights</Text>
+              <Text variant="caption" color="textMuted">Monthly reports, annual wrapped & strength rank</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.menuItem,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+            onPress={() => {
+              lightImpact();
               router.push('/records' as any);
             }}
             accessibilityRole="button"

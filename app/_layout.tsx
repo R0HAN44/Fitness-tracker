@@ -156,6 +156,10 @@ function RootNavigator() {
         <Stack.Screen name="settings/appearance" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/import-export" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/backup-restore" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="reports/index" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="reports/monthly" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="reports/yearly" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="reports/ranking" options={{ animation: 'slide_from_right' }} />
       </Stack>
 
       {isLocked && (

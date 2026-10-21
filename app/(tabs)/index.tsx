@@ -203,6 +203,35 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {/* Reports & Insights Banner */}
+        <Pressable
+          onPress={() => {
+            lightImpact();
+            router.push('/reports' as any);
+          }}
+          style={({ pressed }) => [
+            styles.reportsBanner,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <View style={[styles.reportsIconWrap, { backgroundColor: theme.accent + '22' }]}>
+            <Ionicons name="sparkles" size={20} color={theme.accent} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text variant="body" style={{ fontWeight: '700' }}>
+              Training Reports & Strength Standards
+            </Text>
+            <Text variant="caption" color="textMuted">
+              Monthly summary, Year in Review, and SBD rankings
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+        </Pressable>
+
         {/* Consistency Heatmap */}
         {heatmapData && <ConsistencyHeatmapView data={heatmapData} />}
 
@@ -360,6 +389,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     gap: 2,
+  },
+  reportsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.base,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+  },
+  reportsIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chartSection: {
     padding: spacing.base,
