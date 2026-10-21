@@ -5,3 +5,4 @@ export * from './units';
 export * from './supersets';
 export * from './routines';
 export * from './comparison';
+export * from './stats';

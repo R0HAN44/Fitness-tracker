@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, ScrollView, FlatList, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../src/ui/typography/Text';
 import { SegmentedControl } from '../../src/ui/components/SegmentedControl';
@@ -50,9 +50,11 @@ export default function HistoryScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    reloadData();
-  }, [reloadData]);
+  useFocusEffect(
+    useCallback(() => {
+      reloadData();
+    }, [reloadData]),
+  );
 
   const handleOpenWorkout = (workoutId: string) => {
     lightImpact();

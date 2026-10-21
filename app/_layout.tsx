@@ -18,6 +18,7 @@ import { initializeDatabase } from '../src/db/init';
 import { loadThemeState, saveThemeState } from '../src/db/queries/settings';
 import { seedExercises } from '../src/db/seed';
 import { seedStarterRoutines } from '../src/db/queries/routines';
+import { seedBuiltinMeasurements } from '../src/db/queries/measurements';
 import { requestNotificationPermissions } from '../src/lib/notifications';
 
 // Keep the splash screen visible until we're ready
@@ -45,6 +46,9 @@ export default function RootLayout() {
 
         // Seed built-in exercises (idempotent)
         await seedExercises();
+
+        // Seed built-in body measurements (idempotent)
+        seedBuiltinMeasurements();
 
         // Seed starter routines: PPL, Upper/Lower, Full Body, 5x5
         seedStarterRoutines();
@@ -111,6 +115,8 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="workout/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="records/index" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="measurements/index" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="measurements/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/index" />
         <Stack.Screen name="settings/appearance" options={{ animation: 'slide_from_right' }} />
       </Stack>

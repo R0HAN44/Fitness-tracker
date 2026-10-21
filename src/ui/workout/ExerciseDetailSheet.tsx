@@ -13,11 +13,13 @@ import { Button } from '../components/Button';
 import { NumberStepper } from '../components/NumberStepper';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { SessionComparisonSheet } from './SessionComparisonSheet';
+import { LineChart } from '../charts/LineChart';
 import { useTheme } from '../theme/ThemeProvider';
 import { spacing, radii } from '../theme/tokens';
 import { muscleGroupLabels, type MuscleGroup } from '../../constants/muscles';
 import { equipmentLabels, type EquipmentType } from '../../constants/equipment';
 import { formatDuration, formatWeight } from '../../domain/units';
+import { filterExerciseProgression, type TimeRange } from '../../domain/stats';
 import { lightImpact } from '../../lib/haptics';
 import { Ionicons } from '@expo/vector-icons';
 import type { ExerciseRow } from '../../db/queries/exercises';
@@ -38,7 +40,8 @@ export interface ExerciseDetailSheetProps {
   onRestSecondsChange?: (exerciseId: string, seconds: number) => void;
 }
 
-type TabType = 'about' | 'history' | 'records';
+type TabType = 'about' | 'history' | 'records' | 'charts';
+type ChartMetric = '1rm' | 'max_weight' | 'volume';
 
 export function ExerciseDetailSheet({
   exercise,
@@ -57,6 +60,10 @@ export function ExerciseDetailSheet({
   const [prList, setPrList] = useState<ExercisePRItem[]>([]);
   const [showComparison, setShowComparison] = useState(false);
   const [comparisonData, setComparisonData] = useState<any>(null);
+
+  // Charts state
+  const [chartRange, setChartRange] = useState<TimeRange>('all');
+  const [chartMetric, setChartMetric] = useState<ChartMetric>('1rm');
 
   useEffect(() => {
     if (!visible || !exercise) return;
@@ -136,6 +143,7 @@ export function ExerciseDetailSheet({
               { label: 'About', value: 'about' },
               { label: `History (${historyList.length})`, value: 'history' },
               { label: `Records (${prList.length})`, value: 'records' },
+              { label: 'Charts', value: 'charts' },
             ]}
             value={activeTab}
             onChange={(val) => {
@@ -425,6 +433,79 @@ export function ExerciseDetailSheet({
               )}
             </>
           )}
+
+          {/* ───────────────── CHARTS TAB ───────────────── */}
+          {activeTab === 'charts' && (() => {
+            const progressionData = filterExerciseProgression(
+              historyList.map((h) => ({
+                workoutDate: h.workoutDate,
+                sets: h.sets.map((s) => ({
+                  weightKg: s.weightKg,
+                  reps: s.reps,
+                  setType: s.setType,
+                  isCompleted: s.isCompleted,
+                })),
+              })),
+              chartRange,
+            );
+
+            const chartPoints = progressionData.map((pt) => ({
+              label: pt.label,
+              value:
+                chartMetric === '1rm'
+                  ? pt.best1rmKg
+                  : chartMetric === 'max_weight'
+                  ? pt.maxWeightKg
+                  : pt.volumeKg,
+            }));
+
+            return (
+              <View style={{ gap: spacing.base }}>
+                {/* Metric Selector */}
+                <SegmentedControl
+                  options={[
+                    { label: 'Est. 1RM', value: '1rm' },
+                    { label: 'Max Wt', value: 'max_weight' },
+                    { label: 'Volume', value: 'volume' },
+                  ]}
+                  value={chartMetric}
+                  onChange={(m) => {
+                    lightImpact();
+                    setChartMetric(m as ChartMetric);
+                  }}
+                  size="sm"
+                />
+
+                {/* Range Selector */}
+                <SegmentedControl
+                  options={[
+                    { label: '3 Months', value: '3m' },
+                    { label: '1 Year', value: '1y' },
+                    { label: 'All Time', value: 'all' },
+                  ]}
+                  value={chartRange}
+                  onChange={(r) => {
+                    lightImpact();
+                    setChartRange(r as TimeRange);
+                  }}
+                  size="sm"
+                />
+
+                {/* Progression Chart Card */}
+                <View style={[styles.prCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <Text variant="headingSm" style={{ fontWeight: '700', marginBottom: spacing.xs }}>
+                    {chartMetric === '1rm' ? 'Estimated 1RM Progression' : chartMetric === 'max_weight' ? 'Max Weight Progression' : 'Volume per Session'}
+                  </Text>
+                  <LineChart
+                    data={chartPoints}
+                    height={200}
+                    unit="kg"
+                    emptyMessage="Log 2 or more workout sessions to see progression charts."
+                  />
+                </View>
+              </View>
+            );
+          })()}
         </ScrollView>
       </Sheet>
 
