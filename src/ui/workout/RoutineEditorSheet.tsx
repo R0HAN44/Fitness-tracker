@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../typography/Text';
 import { Sheet } from '../components/Sheet';
 import { Button } from '../components/Button';
@@ -49,6 +50,7 @@ export function RoutineEditorSheet({
   onSave,
 }: RoutineEditorSheetProps) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
@@ -269,6 +271,15 @@ export function RoutineEditorSheet({
       onClose={onClose}
       title={routineId ? 'Edit Routine' : 'New Routine'}
       subtitle={routineId ? 'Update your routine template' : 'Create a reusable workout blueprint'}
+      footer={
+        <Button
+          title={routineId ? 'Update Routine' : 'Create Routine'}
+          variant="primary"
+          size="lg"
+          onPress={handleSave}
+          fullWidth
+        />
+      }
     >
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Input
@@ -552,16 +563,6 @@ export function RoutineEditorSheet({
           multiline
           numberOfLines={3}
         />
-
-        <View style={styles.saveBtnContainer}>
-          <Button
-            title={routineId ? 'Update Routine' : 'Create Routine'}
-            variant="primary"
-            size="lg"
-            onPress={handleSave}
-            fullWidth
-          />
-        </View>
       </ScrollView>
 
       <ExercisePickerSheet
@@ -640,7 +641,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 4,
   },
-  saveBtnContainer: {
-    marginTop: spacing.sm,
+  footer: {
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
   },
 });

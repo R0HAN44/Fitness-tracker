@@ -42,9 +42,11 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('rest_timer', {
         name: 'Rest Timer',
-        importance: Notifications.AndroidImportance.HIGH,
+        importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#C6FF3D',
+        sound: 'default',
+        enableVibrate: true,
       });
     }
 
@@ -69,7 +71,7 @@ export async function scheduleRestTimerNotification(seconds: number): Promise<st
       content: {
         title: 'Rest Finished! ⏰',
         body: 'Time to crush your next set.',
-        sound: true,
+        sound: 'default',
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -83,6 +85,31 @@ export async function scheduleRestTimerNotification(seconds: number): Promise<st
   } catch (err) {
     console.warn('Could not schedule rest timer notification:', err);
     return null;
+  }
+}
+
+/**
+ * Fire the rest-finished notification immediately with sound and banner.
+ * Used when the countdown hits 0 in the foreground.
+ */
+export async function triggerRestFinishedNotification(): Promise<void> {
+  if (Platform.OS === 'web') return;
+
+  try {
+    await cancelScheduledRestTimerNotification();
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Rest Finished! ⏰',
+        body: 'Time to crush your next set.',
+        sound: 'default',
+      },
+      trigger: {
+        channelId: 'rest_timer',
+      } as any,
+    });
+  } catch (err) {
+    console.warn('Could not trigger immediate rest finished notification:', err);
   }
 }
 

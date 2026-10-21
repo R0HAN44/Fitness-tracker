@@ -33,10 +33,14 @@ import {
   type MeasurementChartPoint,
 } from '../../src/db/queries/measurements';
 import type { TimeRange } from '../../src/domain/stats';
+import { toDisplayWeight, toDatabaseWeight, toDisplayLength, toDatabaseLength } from '../../src/domain/units';
+import { useSettingsStore } from '../../src/state/settingsStore';
 
 export default function MeasurementDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { theme } = useTheme();
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
+  const lengthUnit = useSettingsStore((s) => s.lengthUnit);
 
   const [measurement, setMeasurement] = useState<MeasurementSummary | null>(null);
   const [range, setRange] = useState<TimeRange>('all');
@@ -68,6 +72,17 @@ export default function MeasurementDetailScreen() {
 
   if (!measurement) return null;
 
+  const isWeight = measurement.unit === 'kg';
+  const isLength = measurement.unit === 'cm';
+  const activeUnit = isWeight ? weightUnit : isLength ? lengthUnit : measurement.unit;
+
+  const formatVal = (v: number | null | undefined) => {
+    if (v == null) return '—';
+    if (isWeight) return toDisplayWeight(v, weightUnit, 0.1);
+    if (isLength) return toDisplayLength(v, lengthUnit, 0.1);
+    return v;
+  };
+
   const handleSaveEntry = () => {
     const num = parseFloat(newValue);
     if (isNaN(num) || num <= 0) {
@@ -75,8 +90,14 @@ export default function MeasurementDetailScreen() {
       return;
     }
     lightImpact();
+    const baseValue = isWeight
+      ? toDatabaseWeight(num, weightUnit)
+      : isLength
+      ? toDatabaseLength(num, lengthUnit)
+      : num;
+
     addMeasurementEntry(measurement.id, {
-      value: num,
+      value: Math.round(baseValue * 100) / 100,
       notes: newNotes.trim() || undefined,
     });
     setNewValue('');
@@ -159,9 +180,9 @@ export default function MeasurementDetailScreen() {
             <View>
               <Text variant="caption" color="textMuted">LATEST VALUE</Text>
               <Text variant="displayLg" style={{ fontWeight: '900', marginTop: 2 }} tabular>
-                {measurement.latestEntry ? measurement.latestEntry.value : '—'}{' '}
+                {measurement.latestEntry ? formatVal(measurement.latestEntry.value) : '—'}{' '}
                 <Text variant="headingSm" color="textMuted">
-                  {measurement.unit}
+                  {activeUnit}
                 </Text>
               </Text>
             </View>
@@ -173,7 +194,7 @@ export default function MeasurementDetailScreen() {
               icon={<Ionicons name="add" size={16} color={theme.onAccent} />}
               onPress={() => {
                 lightImpact();
-                setNewValue(measurement.latestEntry ? String(measurement.latestEntry.value) : '');
+                setNewValue(measurement.latestEntry ? String(formatVal(measurement.latestEntry.value)) : '');
                 setShowLogSheet(true);
               }}
             />
@@ -194,7 +215,7 @@ export default function MeasurementDetailScreen() {
                   tabular
                 >
                   {measurement.deltaValue > 0 ? '+' : ''}
-                  {measurement.deltaValue} {measurement.unit} from prior
+                  {formatVal(measurement.deltaValue)} {activeUnit} from prior
                 </Text>
               )}
             </View>
@@ -222,9 +243,9 @@ export default function MeasurementDetailScreen() {
             Progression Chart
           </Text>
           <LineChart
-            data={chartData.map((pt) => ({ label: pt.label, value: pt.value }))}
+            data={chartData.map((pt) => ({ label: pt.label, value: Number(formatVal(pt.value)) }))}
             height={190}
-            unit={measurement.unit}
+            unit={activeUnit}
             emptyMessage="Log 2 or more entries to see your trend curve."
           />
         </View>
@@ -248,7 +269,7 @@ export default function MeasurementDetailScreen() {
             >
               <View style={{ flex: 1 }}>
                 <Text variant="body" style={{ fontWeight: '700' }} tabular>
-                  {entry.value} {measurement.unit}
+                  {formatVal(entry.value)} {activeUnit}
                 </Text>
                 <Text variant="caption" color="textMuted">
                   {formatDate(entry.measuredAt)}
@@ -277,11 +298,12 @@ export default function MeasurementDetailScreen() {
         visible={showLogSheet}
         onClose={() => setShowLogSheet(false)}
         title={`Log ${measurement.name}`}
-        subtitle={`Unit: ${measurement.unit}`}
+        subtitle={`Unit: ${activeUnit}`}
+        scrollable
       >
         <View style={styles.form}>
           <Input
-            label={`Value (${measurement.unit})`}
+            label={`Value (${activeUnit})`}
             value={newValue}
             onChangeText={setNewValue}
             keyboardType="decimal-pad"

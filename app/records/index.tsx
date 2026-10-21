@@ -16,9 +16,12 @@ import { spacing, radii, fontFamily, typography } from '../../src/ui/theme/token
 import { getAllPersonalRecords, type GlobalPRItem } from '../../src/db/queries/workouts';
 import { getExercises, type ExerciseRow } from '../../src/db/queries/exercises';
 import { lightImpact } from '../../src/lib/haptics';
+import { formatWeight } from '../../src/domain/units';
+import { useSettingsStore } from '../../src/state/settingsStore';
 
 export default function RecordsScreen() {
   const { theme } = useTheme();
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
 
   const [allPRs, setAllPRs] = useState<GlobalPRItem[]>([]);
   const [filterType, setFilterType] = useState<string>('all');
@@ -116,7 +119,9 @@ export default function RecordsScreen() {
 
         <View style={styles.prCardRight}>
           <Text variant="headingSm" style={{ color: theme.prGold, fontWeight: '900' }} tabular>
-            {item.value} {isVolPR ? 'kg' : isWeightPR ? 'kg' : 'reps'}
+            {item.recordType === 'max_reps_at_weight'
+              ? `${item.value} reps`
+              : formatWeight(item.value, weightUnit)}
           </Text>
           {item.reps && item.recordType !== 'max_reps_at_weight' ? (
             <Text variant="caption" color="textMuted">
@@ -124,7 +129,7 @@ export default function RecordsScreen() {
             </Text>
           ) : item.weightKg ? (
             <Text variant="caption" color="textMuted">
-              @ {item.weightKg} kg
+              @ {formatWeight(item.weightKg, weightUnit)}
             </Text>
           ) : null}
         </View>

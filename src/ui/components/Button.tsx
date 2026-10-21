@@ -80,6 +80,7 @@ export function Button({
           height: heightMap[size],
           paddingHorizontal: paddingMap[size],
           opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
+          transform: [{ scale: pressed ? 0.985 : 1 }],
         },
         fullWidth && styles.fullWidth,
         style,

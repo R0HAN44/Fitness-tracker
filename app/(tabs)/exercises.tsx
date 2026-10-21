@@ -112,11 +112,11 @@ export default function ExercisesScreen() {
     >
       <View style={styles.exerciseInfo}>
         <View style={styles.nameRow}>
-          <Text variant="body" style={{ fontWeight: '600' }}>
+          <Text variant="body" numberOfLines={1} style={{ fontWeight: '600', flexShrink: 1 }}>
             {item.name}
           </Text>
           {item.isCustom && (
-            <View style={[styles.customBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent }]}>
+            <View style={[styles.customBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent, flexShrink: 0 }]}>
               <Text variant="caption" style={{ color: theme.accent, fontSize: 10, fontWeight: '700' }}>
                 CUSTOM
               </Text>
@@ -376,12 +376,18 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
-    paddingVertical: spacing.xs,
+    paddingVertical: 2,
   },
   filterChip: {
+    height: 32,
+    alignSelf: 'center',
+    flexGrow: 0,
+    flexShrink: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
     borderRadius: radii.full,
     borderWidth: 1,
   },

@@ -30,13 +30,16 @@ import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { SwipeableRow } from '../components/SwipeableRow';
 import { Sheet } from '../components/Sheet';
+import { ConfirmationSheet } from '../components/ConfirmationSheet';
+import { OptionMenuSheet } from '../components/OptionMenuSheet';
 import { DraggableList } from '../components/DraggableList';
 import { PlateCalculatorSheet } from './PlateCalculatorSheet';
 import { ExercisePickerSheet } from './ExercisePickerSheet';
 import { useWorkoutStore } from '../../state/workoutStore';
+import { useSettingsStore } from '../../state/settingsStore';
 import { useTheme } from '../theme/ThemeProvider';
 import { spacing, radii, layout, typography } from '../theme/tokens';
-import { formatDuration, formatWeight } from '../../domain/units';
+import { formatDuration, formatWeight, toDisplayWeight, toDatabaseWeight } from '../../domain/units';
 import { calculateWorkoutVolume } from '../../domain/calc';
 import { lightImpact, mediumImpact, heavyImpact, notificationSuccess } from '../../lib/haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,6 +54,7 @@ import { saveWorkoutAsRoutine } from '../../db/queries/routines';
 export function LiveWorkoutView() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
 
   const {
     activeWorkout,
@@ -85,6 +89,7 @@ export function LiveWorkoutView() {
   const [showPlateCalculator, setShowPlateCalculator] = useState(false);
   const [plateCalcWeight, setPlateCalcWeight] = useState(60);
   const [showFinishSheet, setShowFinishSheet] = useState(false);
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
 
   // Finish summary state
@@ -129,18 +134,8 @@ export function LiveWorkoutView() {
   };
 
   const handlePromptDiscard = () => {
-    Alert.alert(
-      'Discard Workout?',
-      'Are you sure you want to discard this workout? All progress will be lost.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Discard',
-          style: 'destructive',
-          onPress: () => discardWorkout(),
-        },
-      ],
-    );
+    lightImpact();
+    setShowDiscardModal(true);
   };
 
   const handleOpenPlateCalc = (weightKg: number | null | undefined) => {
@@ -200,7 +195,7 @@ export function LiveWorkoutView() {
               •
             </Text>
             <Text variant="caption" color="textMuted" tabular>
-              {formatWeight(currentVolume, 'kg')}
+              {formatWeight(currentVolume, weightUnit)}
             </Text>
           </View>
         </View>
@@ -469,7 +464,7 @@ export function LiveWorkoutView() {
                 VOLUME
               </Text>
               <Text variant="headingSm" color="text" tabular>
-                {formatWeight(currentVolume, 'kg')}
+                {formatWeight(currentVolume, weightUnit)}
               </Text>
             </View>
             <View style={styles.finishStatItem}>
@@ -536,7 +531,7 @@ export function LiveWorkoutView() {
             )}
           </View>
 
-          <View style={{ marginTop: spacing.base }}>
+          <View style={{ marginTop: spacing.base, gap: spacing.sm }}>
             <Button
               title="Save Workout"
               variant="primary"
@@ -544,9 +539,34 @@ export function LiveWorkoutView() {
               onPress={handleConfirmFinish}
               fullWidth
             />
+            <Button
+              title="Discard Workout"
+              variant="danger"
+              size="md"
+              onPress={() => {
+                setShowFinishSheet(false);
+                setShowDiscardModal(true);
+              }}
+              fullWidth
+            />
           </View>
         </ScrollView>
       </Sheet>
+
+      {/* Discard Workout Confirmation Sheet */}
+      <ConfirmationSheet
+        visible={showDiscardModal}
+        onClose={() => setShowDiscardModal(false)}
+        title="Discard Workout?"
+        message="Are you sure you want to discard this workout? All recorded sets and progress will be permanently lost."
+        confirmLabel="Discard Workout"
+        cancelLabel="Keep Training"
+        destructive
+        icon="trash-outline"
+        onConfirm={() => {
+          discardWorkout();
+        }}
+      />
     </View>
   );
 }
@@ -589,45 +609,18 @@ function ExerciseCard({
   onOpenPlateCalc,
 }: ExerciseCardProps) {
   const { theme } = useTheme();
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
   const { exercise, sets, supersetGroupId, notes } = workoutExercise;
   const isBarbell = exercise.equipment === 'barbell';
   const isSuperset = supersetGroupId != null;
 
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [exerciseNotesText, setExerciseNotesText] = useState(notes ?? '');
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
 
   const handleOpenMenu = () => {
-    const options: Array<{ text: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void }> = [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Replace Exercise',
-        onPress: onReplaceExercise,
-      },
-      {
-        text: notes ? 'Edit Exercise Note' : 'Add Exercise Note',
-        onPress: () => setIsEditingNotes(true),
-      },
-    ];
-
-    if (isSuperset) {
-      options.push({
-        text: 'Ungroup from Superset',
-        onPress: onUngroup,
-      });
-    } else if (hasNextExercise) {
-      options.push({
-        text: 'Group with Next Exercise (Superset)',
-        onPress: onGroupWithNext,
-      });
-    }
-
-    options.push({
-      text: 'Remove Exercise',
-      style: 'destructive',
-      onPress: onRemoveExercise,
-    });
-
-    Alert.alert(exercise.name, 'Exercise Options', options);
+    lightImpact();
+    setShowOptionsMenu(true);
   };
 
   return (
@@ -732,7 +725,7 @@ function ExerciseCard({
           PREV
         </Text>
         <Text variant="caption" color="textMuted" style={styles.colWeight}>
-          KG {isBarbell && '🧮'}
+          {weightUnit.toUpperCase()} {isBarbell && '🧮'}
         </Text>
         <Text variant="caption" color="textMuted" style={styles.colReps}>
           REPS
@@ -807,7 +800,7 @@ function ExerciseCard({
                   style={{ fontSize: 11 }}
                 >
                   {prevPerf && (prevPerf.weightKg != null || prevPerf.reps != null)
-                    ? `${prevPerf.weightKg ?? 0}×${prevPerf.reps ?? 0}`
+                    ? `${prevPerf.weightKg != null ? toDisplayWeight(prevPerf.weightKg, weightUnit) : 0}×${prevPerf.reps ?? 0}`
                     : '—'}
                 </Text>
               </Pressable>
@@ -815,10 +808,11 @@ function ExerciseCard({
               {/* Weight input / plate calculator button */}
               <View style={styles.weightCell}>
                 <TextInput
-                  value={set.weightKg != null ? set.weightKg.toString() : ''}
+                  value={set.weightKg != null ? toDisplayWeight(set.weightKg, weightUnit).toString() : ''}
                   onChangeText={(val) => {
                     const num = parseFloat(val);
-                    onUpdateSet(set.id, { weightKg: isNaN(num) ? null : num });
+                    const weightKg = isNaN(num) ? null : toDatabaseWeight(num, weightUnit);
+                    onUpdateSet(set.id, { weightKg });
                   }}
                   keyboardType="decimal-pad"
                   placeholder="0"
@@ -916,6 +910,54 @@ function ExerciseCard({
           Add Set
         </Text>
       </Pressable>
+
+      {/* Exercise Options Sheet */}
+      <OptionMenuSheet
+        visible={showOptionsMenu}
+        onClose={() => setShowOptionsMenu(false)}
+        title={exercise.name}
+        subtitle="Exercise Options"
+        options={[
+          {
+            id: 'replace',
+            label: 'Replace Exercise',
+            icon: 'swap-horizontal',
+            onPress: onReplaceExercise,
+          },
+          {
+            id: 'note',
+            label: notes ? 'Edit Exercise Note' : 'Add Exercise Note',
+            icon: 'create-outline',
+            onPress: () => setIsEditingNotes(true),
+          },
+          ...(isSuperset
+            ? [
+                {
+                  id: 'ungroup',
+                  label: 'Ungroup from Superset',
+                  icon: 'link-outline' as const,
+                  onPress: onUngroup,
+                },
+              ]
+            : hasNextExercise
+            ? [
+                {
+                  id: 'group',
+                  label: 'Group with Next Exercise (Superset)',
+                  icon: 'link-outline' as const,
+                  onPress: onGroupWithNext,
+                },
+              ]
+            : []),
+          {
+            id: 'remove',
+            label: 'Remove Exercise',
+            icon: 'trash-outline',
+            destructive: true,
+            onPress: onRemoveExercise,
+          },
+        ]}
+      />
     </View>
   );
 }

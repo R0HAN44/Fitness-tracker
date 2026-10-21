@@ -15,6 +15,8 @@ import { spacing, radii, layout } from '../../src/ui/theme/tokens';
 import { useWorkoutStore } from '../../src/state/workoutStore';
 import { LiveWorkoutView } from '../../src/ui/workout/LiveWorkoutView';
 import { RoutineEditorSheet } from '../../src/ui/workout/RoutineEditorSheet';
+import { OptionMenuSheet } from '../../src/ui/components/OptionMenuSheet';
+import { ConfirmationSheet } from '../../src/ui/components/ConfirmationSheet';
 import {
   getRoutines,
   getRoutineFolders,
@@ -39,9 +41,11 @@ export default function WorkoutScreen() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
-  // Routine editor sheet
+  // Routine editor & option menu sheets
   const [showRoutineEditor, setShowRoutineEditor] = useState(false);
   const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
+  const [menuRoutine, setMenuRoutine] = useState<FullRoutine | null>(null);
+  const [deletingRoutine, setDeletingRoutine] = useState<FullRoutine | null>(null);
 
   const reloadRoutines = useCallback(() => {
     const allRoutines = getRoutines({
@@ -125,22 +129,8 @@ export default function WorkoutScreen() {
   };
 
   const handleDeleteRoutine = (routine: FullRoutine) => {
-    Alert.alert(
-      'Delete Routine?',
-      `Are you sure you want to delete "${routine.name}"? Past workouts logged from this routine will be preserved.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            lightImpact();
-            deleteRoutine(routine.id);
-            reloadRoutines();
-          },
-        },
-      ],
-    );
+    lightImpact();
+    setDeletingRoutine(routine);
   };
 
   const handleShareRoutine = async (routine: FullRoutine) => {
@@ -196,33 +186,8 @@ export default function WorkoutScreen() {
   };
 
   const handleOpenMenu = (routine: FullRoutine) => {
-    Alert.alert(routine.name, 'Choose an option', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Start Workout',
-        onPress: () => handleStartRoutine(routine.id),
-      },
-      {
-        text: 'Edit Routine',
-        onPress: () => {
-          setEditingRoutineId(routine.id);
-          setShowRoutineEditor(true);
-        },
-      },
-      {
-        text: 'Share Routine',
-        onPress: () => handleShareRoutine(routine),
-      },
-      {
-        text: 'Duplicate Routine',
-        onPress: () => handleDuplicateRoutine(routine.id),
-      },
-      {
-        text: 'Delete Routine',
-        style: 'destructive',
-        onPress: () => handleDeleteRoutine(routine),
-      },
-    ]);
+    lightImpact();
+    setMenuRoutine(routine);
   };
 
   return (
@@ -430,13 +395,18 @@ export default function WorkoutScreen() {
                 style={[styles.routineCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
               >
                 <View style={styles.routineHeader}>
-                  <View style={{ flex: 1 }}>
+                  <View style={{ flex: 1, marginRight: spacing.sm }}>
                     <View style={styles.titleRow}>
-                      <Text variant="headingSm" style={{ fontWeight: '700' }}>
+                      <Text
+                        variant="headingSm"
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                        style={{ fontWeight: '700', flexShrink: 1 }}
+                      >
                         {routine.name}
                       </Text>
                       {routine.isPreset ? (
-                        <View style={[styles.presetBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent }]}>
+                        <View style={[styles.presetBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent, flexShrink: 0 }]}>
                           <Text variant="caption" style={{ color: theme.accent, fontSize: 10, fontWeight: '700' }}>
                             PRESET
                           </Text>
@@ -445,13 +415,18 @@ export default function WorkoutScreen() {
                     </View>
 
                     {routine.folder ? (
-                      <Text variant="caption" color="accent" style={{ fontWeight: '600', marginTop: 2 }}>
+                      <Text variant="caption" color="accent" numberOfLines={1} style={{ fontWeight: '600', marginTop: 2 }}>
                         📁 {routine.folder.name}
                       </Text>
                     ) : null}
                   </View>
 
-                  <Pressable onPress={() => handleOpenMenu(routine)} hitSlop={8} style={styles.cardMenuBtn}>
+                  <Pressable
+                    onPress={() => handleOpenMenu(routine)}
+                    hitSlop={8}
+                    style={[styles.cardMenuBtn, { flexShrink: 0 }]}
+                    accessibilityLabel={`Options for ${routine.name}`}
+                  >
                     <Ionicons name="ellipsis-horizontal" size={20} color={theme.textMuted} />
                   </Pressable>
                 </View>
@@ -499,12 +474,77 @@ export default function WorkoutScreen() {
         )}
       </ScrollView>
 
+      {/* Routine Options Sheet ("..." Menu) */}
+      <OptionMenuSheet
+        visible={!!menuRoutine}
+        onClose={() => setMenuRoutine(null)}
+        title={menuRoutine?.name}
+        subtitle={menuRoutine?.folder ? `Folder: ${menuRoutine.folder.name}` : undefined}
+        options={[
+          {
+            id: 'start',
+            label: 'Start Workout',
+            icon: 'play',
+            onPress: () => menuRoutine && handleStartRoutine(menuRoutine.id),
+          },
+          {
+            id: 'edit',
+            label: 'Edit Routine',
+            icon: 'create-outline',
+            onPress: () => {
+              if (menuRoutine) {
+                setEditingRoutineId(menuRoutine.id);
+                setShowRoutineEditor(true);
+              }
+            },
+          },
+          {
+            id: 'share',
+            label: 'Share Routine',
+            icon: 'share-outline',
+            onPress: () => menuRoutine && handleShareRoutine(menuRoutine),
+          },
+          {
+            id: 'duplicate',
+            label: 'Duplicate Routine',
+            icon: 'copy-outline',
+            onPress: () => menuRoutine && handleDuplicateRoutine(menuRoutine.id),
+          },
+          {
+            id: 'delete',
+            label: 'Delete Routine',
+            icon: 'trash-outline',
+            destructive: true,
+            onPress: () => menuRoutine && handleDeleteRoutine(menuRoutine),
+          },
+        ]}
+      />
+
       {/* Routine Editor Sheet */}
       <RoutineEditorSheet
         visible={showRoutineEditor}
         onClose={() => setShowRoutineEditor(false)}
         routineId={editingRoutineId}
         onSave={() => reloadRoutines()}
+      />
+
+      {/* Delete Routine Confirmation Sheet */}
+      <ConfirmationSheet
+        visible={!!deletingRoutine}
+        onClose={() => setDeletingRoutine(null)}
+        title="Delete Routine?"
+        message={`Are you sure you want to delete "${deletingRoutine?.name}"? Past workouts logged from this routine will be preserved.`}
+        confirmLabel="Delete Routine"
+        cancelLabel="Keep Routine"
+        destructive
+        icon="trash-outline"
+        onConfirm={() => {
+          if (deletingRoutine) {
+            deleteRoutine(deletingRoutine.id);
+            reloadRoutines();
+            setDeletingRoutine(null);
+          }
+        }}
       />
     </SafeAreaView>
   );
@@ -547,18 +587,29 @@ const styles = StyleSheet.create({
   },
   folderRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
     paddingVertical: 2,
   },
   folderChip: {
+    height: 32,
+    alignSelf: 'center',
+    flexGrow: 0,
+    flexShrink: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
     borderRadius: radii.full,
     borderWidth: 1,
   },
   tagFilterChip: {
+    height: 30,
+    alignSelf: 'center',
+    flexGrow: 0,
+    flexShrink: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
     borderRadius: radii.full,
     borderWidth: 1,
   },

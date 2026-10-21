@@ -9,6 +9,7 @@ import { Text } from '../typography/Text';
 import { useTheme } from '../theme/ThemeProvider';
 import { spacing, radii } from '../theme/tokens';
 import type { ConsistencyHeatmapData } from '../../domain/stats';
+import { useSettingsStore } from '../../state/settingsStore';
 
 export interface ConsistencyHeatmapViewProps {
   data: ConsistencyHeatmapData;
@@ -16,6 +17,7 @@ export interface ConsistencyHeatmapViewProps {
 
 export function ConsistencyHeatmapView({ data }: ConsistencyHeatmapViewProps) {
   const { theme } = useTheme();
+  const weekStart = useSettingsStore((s) => s.weekStart);
 
   const getCellColor = (intensity: number) => {
     switch (intensity) {
@@ -30,7 +32,9 @@ export function ConsistencyHeatmapView({ data }: ConsistencyHeatmapViewProps) {
     }
   };
 
-  const dayLabels = ['M', '', 'W', '', 'F', '', 'S'];
+  const dayLabels = weekStart === 0
+    ? ['S', '', 'T', '', 'T', '', 'S']
+    : ['M', '', 'W', '', 'F', '', 'S'];
 
   return (
     <View style={[styles.container, { backgroundColor: theme.surface, borderColor: theme.border }]}>

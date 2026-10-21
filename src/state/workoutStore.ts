@@ -43,6 +43,7 @@ import {
 import {
   scheduleRestTimerNotification,
   cancelScheduledRestTimerNotification,
+  triggerRestFinishedNotification,
 } from '../lib/notifications';
 
 interface WorkoutStoreState {
@@ -470,6 +471,7 @@ function startRestInterval(
       }
 
       notificationWarning();
+      triggerRestFinishedNotification();
 
       const { activeWorkout } = get();
       if (activeWorkout) {

@@ -60,6 +60,38 @@ export function toDatabaseWeight(inputWeight: number, unit: WeightUnit): number 
   return unit === 'lb' ? lbToKg(inputWeight) : inputWeight;
 }
 
+/** Convert stored cm to display unit, optionally rounded */
+export function toDisplayLength(lengthCm: number, unit: LengthUnit, step?: number): number {
+  const converted = unit === 'in' ? cmToIn(lengthCm) : lengthCm;
+  return step ? roundToStep(converted, step) : converted;
+}
+
+/** Convert user-input length in display unit to stored cm */
+export function toDatabaseLength(inputLength: number, unit: LengthUnit): number {
+  return unit === 'in' ? inToCm(inputLength) : inputLength;
+}
+
+/** Format length for UI display with unit label */
+export function formatLength(
+  lengthCm: number | null | undefined,
+  unit: LengthUnit = 'cm',
+  options: { includeUnit?: boolean; decimals?: number } = {},
+): string {
+  const { includeUnit = true, decimals } = options;
+  if (lengthCm == null || isNaN(lengthCm)) return includeUnit ? `- ${unit}` : '-';
+
+  const displayVal = unit === 'in' ? cmToIn(lengthCm) : lengthCm;
+
+  let formatted: string;
+  if (decimals !== undefined) {
+    formatted = displayVal.toFixed(decimals);
+  } else {
+    formatted = Number(displayVal.toFixed(2)).toString();
+  }
+
+  return includeUnit ? `${formatted} ${unit}` : formatted;
+}
+
 /** Format weight for UI display with unit label */
 export function formatWeight(
   weightKg: number | null | undefined,

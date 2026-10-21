@@ -26,6 +26,7 @@ import { isAppLockConfigured, authenticateAppLock } from '../src/lib/appLock';
 import { Button } from '../src/ui/components/Button';
 import { Text } from '../src/ui/typography/Text';
 import { spacing, radii } from '../src/ui/theme/tokens';
+import { useSettingsStore } from '../src/state/settingsStore';
 
 // Keep the splash screen visible until we're ready
 SplashScreen.preventAutoHideAsync();
@@ -65,6 +66,9 @@ export default function RootLayout() {
         // Load saved theme state
         const savedTheme = loadThemeState();
         setThemeState(savedTheme);
+
+        // Load saved settings state into reactive store
+        useSettingsStore.getState().loadSettings();
       } catch (error) {
         console.error('Failed to initialize app:', error);
       } finally {
@@ -154,6 +158,9 @@ function RootNavigator() {
         <Stack.Screen name="measurements/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/index" />
         <Stack.Screen name="settings/appearance" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings/units" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings/rest-timer" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings/plate-setup" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/import-export" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/backup-restore" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="reports/index" options={{ animation: 'slide_from_right' }} />

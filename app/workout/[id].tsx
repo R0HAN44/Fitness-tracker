@@ -34,7 +34,8 @@ import { Input } from '../../src/ui/components/Input';
 import { SessionComparisonSheet } from '../../src/ui/workout/SessionComparisonSheet';
 import { useTheme } from '../../src/ui/theme/ThemeProvider';
 import { spacing, radii, layout, typography } from '../../src/ui/theme/tokens';
-import { formatDuration, formatWeight } from '../../src/domain/units';
+import { formatDuration, formatWeight, toDisplayWeight, toDatabaseWeight } from '../../src/domain/units';
+import { useSettingsStore } from '../../src/state/settingsStore';
 import { lightImpact, mediumImpact, notificationSuccess } from '../../src/lib/haptics';
 import {
   getCompletedWorkoutDetail,
@@ -52,6 +53,7 @@ export default function WorkoutDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { theme } = useTheme();
   const shareCardRef = useRef<any>(null);
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
 
   const [workout, setWorkout] = useState<CompletedWorkoutDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -138,7 +140,8 @@ export default function WorkoutDetailScreen() {
 
   const handleUpdateSetWeight = (setId: string, val: string) => {
     const num = parseFloat(val);
-    updateCompletedWorkoutSet(setId, { weightKg: isNaN(num) ? null : num });
+    const weightKg = isNaN(num) ? null : toDatabaseWeight(num, weightUnit);
+    updateCompletedWorkoutSet(setId, { weightKg });
     loadWorkout();
   };
 
@@ -330,7 +333,7 @@ export default function WorkoutDetailScreen() {
             <View style={styles.metricItem}>
               <Text variant="caption" color="textMuted">VOLUME</Text>
               <Text variant="headingSm" color="text" tabular style={{ fontWeight: '800' }}>
-                {formatWeight(workout.totalVolumeKg ?? 0, 'kg')}
+                {formatWeight(workout.totalVolumeKg ?? 0, weightUnit)}
               </Text>
             </View>
             <View style={styles.metricItem}>
@@ -459,14 +462,14 @@ export default function WorkoutDetailScreen() {
                 {/* Weight & Reps inputs */}
                 <View style={styles.inputsRow}>
                   <TextInput
-                    defaultValue={s.weightKg != null ? String(s.weightKg) : ''}
+                    defaultValue={s.weightKg != null ? String(toDisplayWeight(s.weightKg, weightUnit)) : ''}
                     onEndEditing={(e) => handleUpdateSetWeight(s.id, e.nativeEvent.text)}
                     keyboardType="decimal-pad"
                     placeholder="0"
                     placeholderTextColor={theme.textMuted}
                     style={[styles.numInput, { color: theme.text, borderColor: theme.border }]}
                   />
-                  <Text variant="caption" color="textMuted">kg ×</Text>
+                  <Text variant="caption" color="textMuted">{weightUnit} ×</Text>
                   <TextInput
                     defaultValue={s.reps != null ? String(s.reps) : ''}
                     onEndEditing={(e) => handleUpdateSetReps(s.id, e.nativeEvent.text)}

@@ -20,6 +20,7 @@ import {
   DEFAULT_BARBELL_LB,
 } from '../../lib/plateCalculator';
 import { toDisplayWeight, toDatabaseWeight, type WeightUnit } from '../../lib/units';
+import { useSettingsStore } from '../../state/settingsStore';
 
 export interface PlateCalculatorSheetProps {
   visible: boolean;
@@ -32,17 +33,36 @@ export function PlateCalculatorSheet({
   visible,
   onClose,
   initialWeightKg = 60,
-  weightUnit = 'kg',
+  weightUnit,
 }: PlateCalculatorSheetProps) {
   const { theme } = useTheme();
-  const [unit, setUnit] = useState<WeightUnit>(weightUnit);
+  const storeWeightUnit = useSettingsStore((s) => s.weightUnit);
+  const storeBarbellKg = useSettingsStore((s) => s.barbellWeightKg);
+  const storePlatesKg = useSettingsStore((s) => s.availablePlatesKg);
+
+  const activeUnit = weightUnit ?? storeWeightUnit ?? 'kg';
+  const [unit, setUnit] = useState<WeightUnit>(activeUnit);
 
   const initialDisplay = toDisplayWeight(initialWeightKg, unit, 0.5);
   const [targetWeight, setTargetWeight] = useState(initialDisplay);
 
+  React.useEffect(() => {
+    if (visible) {
+      setUnit(activeUnit);
+      setTargetWeight(toDisplayWeight(initialWeightKg, activeUnit, 0.5));
+    }
+  }, [visible, initialWeightKg, activeUnit]);
+
   const isKg = unit === 'kg';
-  const barbellWeight = isKg ? DEFAULT_BARBELL_KG : DEFAULT_BARBELL_LB;
-  const availablePlates = isKg ? DEFAULT_PLATES_KG : DEFAULT_PLATES_LB;
+  const barbellWeight = isKg
+    ? storeBarbellKg || DEFAULT_BARBELL_KG
+    : Math.round((storeBarbellKg || DEFAULT_BARBELL_KG) * 2.20462262 * 2) / 2;
+
+  const availablePlates = isKg
+    ? (storePlatesKg && storePlatesKg.length > 0 ? storePlatesKg : DEFAULT_PLATES_KG)
+    : (storePlatesKg && storePlatesKg.length > 0
+        ? storePlatesKg.map((p) => Math.round(p * 2.20462262 * 2) / 2)
+        : DEFAULT_PLATES_LB);
 
   const result = calculatePlates(targetWeight, {
     barbellWeight,

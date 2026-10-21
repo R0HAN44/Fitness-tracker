@@ -1,19 +1,22 @@
 /**
  * Settings hub — links to all settings sections.
+ * Reactive settings state connected to SQLite singleton settings table.
  * Includes dev-only sample data tools (hidden in release builds).
  */
 
 import React, { useState, useEffect } from 'react';
-import { ScrollView, Alert, View } from 'react-native';
+import { ScrollView, Alert, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../src/ui/typography/Text';
 import { ListRow } from '../../src/ui/components/ListRow';
+import { OptionMenuSheet } from '../../src/ui/components/OptionMenuSheet';
 import { useTheme } from '../../src/ui/theme/ThemeProvider';
 import { createStyles } from '../../src/ui/theme/createStyles';
 import { spacing } from '../../src/ui/theme/tokens';
 import { lightImpact, notificationSuccess } from '../../src/lib/haptics';
+import { useSettingsStore } from '../../src/state/settingsStore';
 import {
   hasSampleData,
   loadSampleData,
@@ -30,9 +33,25 @@ export default function SettingsScreen() {
   const styles = useStyles();
   const { theme } = useTheme();
 
+  // Reactive settings from store
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
+  const lengthUnit = useSettingsStore((s) => s.lengthUnit);
+  const defaultRestSeconds = useSettingsStore((s) => s.defaultRestSeconds);
+  const barbellWeightKg = useSettingsStore((s) => s.barbellWeightKg);
+  const weekStart = useSettingsStore((s) => s.weekStart);
+  const weeklyWorkoutGoal = useSettingsStore((s) => s.weeklyWorkoutGoal);
+  const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
+  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
+
+  const setWeekStart = useSettingsStore((s) => s.setWeekStart);
+  const setWeeklyWorkoutGoal = useSettingsStore((s) => s.setWeeklyWorkoutGoal);
+  const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
+  const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
+
   const [sampleDataActive, setSampleDataActive] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
   const [appLockActive, setAppLockActive] = useState(false);
+  const [showGoalModal, setShowGoalModal] = useState(false);
 
   useEffect(() => {
     if (__DEV__) {
@@ -69,30 +88,45 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleLoadSample = () => {
+  const handleToggleWeekStart = () => {
+    lightImpact();
+    const next = weekStart === 1 ? 0 : 1;
+    setWeekStart(next);
+  };
+
+  const handleCycleGoal = () => {
+    lightImpact();
+    setShowGoalModal(true);
+  };
+
+  const handleLoadSample = (count: number = 47) => {
     lightImpact();
     Alert.alert(
-      'Load Sample Data?',
-      'Generates 47 completed workouts spanning 16 weeks with progressive volume, balanced muscle groups, PRs, and body measurements. Real workouts and measurements are tagged and will never be affected.',
+      `Load Sample Data (${count} Workouts)?`,
+      count === 1000
+        ? 'Generates 1,000 completed workouts across historical dates to benchmark database query speeds and list virtualization. Tagged as sample data and will never affect real workouts.'
+        : 'Generates 47 completed workouts spanning 16 weeks with progressive volume, balanced muscle groups, PRs, and body measurements. Tagged as sample data and will never affect real workouts.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Load Data',
           onPress: () => {
             setLoadingSample(true);
-            try {
-              const res = loadSampleData();
-              setSampleDataActive(true);
-              notificationSuccess();
-              Alert.alert(
-                'Sample Data Loaded',
-                `Successfully created ${res.workoutsCount} workouts and ${res.entriesCount} body tracking entries across 16 weeks.`,
-              );
-            } catch (e: any) {
-              Alert.alert('Error', e.message || 'Failed to load sample data.');
-            } finally {
-              setLoadingSample(false);
-            }
+            setTimeout(() => {
+              try {
+                const res = loadSampleData(count);
+                setSampleDataActive(true);
+                notificationSuccess();
+                Alert.alert(
+                  'Sample Data Loaded',
+                  `Successfully created ${res.workoutsCount} workouts and ${res.entriesCount} body tracking entries.`,
+                );
+              } catch (e: any) {
+                Alert.alert('Error', e.message || 'Failed to load sample data.');
+              } finally {
+                setLoadingSample(false);
+              }
+            }, 50);
           },
         },
       ],
@@ -111,19 +145,21 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: () => {
             setLoadingSample(true);
-            try {
-              const res = clearSampleData();
-              setSampleDataActive(false);
-              notificationSuccess();
-              Alert.alert(
-                'Sample Data Cleared',
-                `Removed ${res.deletedWorkoutsCount} sample workouts and ${res.deletedEntriesCount} sample measurement entries.`,
-              );
-            } catch (e: any) {
-              Alert.alert('Error', e.message || 'Failed to clear sample data.');
-            } finally {
-              setLoadingSample(false);
-            }
+            setTimeout(() => {
+              try {
+                const res = clearSampleData();
+                setSampleDataActive(false);
+                notificationSuccess();
+                Alert.alert(
+                  'Sample Data Cleared',
+                  `Removed ${res.deletedWorkoutsCount} sample workouts and ${res.deletedEntriesCount} sample measurement entries.`,
+                );
+              } catch (e: any) {
+                Alert.alert('Error', e.message || 'Failed to clear sample data.');
+              } finally {
+                setLoadingSample(false);
+              }
+            }, 50);
           },
         },
       ],
@@ -148,27 +184,61 @@ export default function SettingsScreen() {
         <ListRow
           label="Appearance"
           icon={<Ionicons name="color-palette-outline" size={18} color={theme.text} />}
-          onPress={() => router.push('/settings/appearance')}
+          onPress={() => {
+            lightImpact();
+            router.push('/settings/appearance' as any);
+          }}
         />
 
         <Text variant="caption" color="textMuted" style={styles.sectionLabel}>
-          WORKOUT
+          WORKOUT DEFAULTS
         </Text>
         <ListRow
           label="Units"
-          value="kg / cm"
+          value={`${weightUnit} / ${lengthUnit}`}
           icon={<Ionicons name="swap-horizontal-outline" size={18} color={theme.text} />}
+          onPress={() => {
+            lightImpact();
+            router.push('/settings/units' as any);
+          }}
           showChevron
         />
         <ListRow
           label="Rest Timer"
-          value="90s"
+          value={`${defaultRestSeconds}s`}
           icon={<Ionicons name="timer-outline" size={18} color={theme.text} />}
+          onPress={() => {
+            lightImpact();
+            router.push('/settings/rest-timer' as any);
+          }}
           showChevron
         />
         <ListRow
-          label="Plate Setup"
+          label="Plate Calculator Setup"
+          value={`${barbellWeightKg} kg bar`}
           icon={<Ionicons name="disc-outline" size={18} color={theme.text} />}
+          onPress={() => {
+            lightImpact();
+            router.push('/settings/plate-setup' as any);
+          }}
+          showChevron
+        />
+
+        <Text variant="caption" color="textMuted" style={styles.sectionLabel}>
+          SCHEDULE & GOALS
+        </Text>
+        <ListRow
+          label="First Day of Week"
+          value={weekStart === 1 ? 'Monday' : 'Sunday'}
+          icon={<Ionicons name="calendar-outline" size={18} color={theme.text} />}
+          onPress={handleToggleWeekStart}
+          showChevron
+        />
+        <ListRow
+          label="Weekly Workout Goal"
+          value={`${weeklyWorkoutGoal} days / week`}
+          icon={<Ionicons name="flame-outline" size={18} color={theme.text} />}
+          onPress={handleCycleGoal}
           showChevron
         />
 
@@ -178,23 +248,43 @@ export default function SettingsScreen() {
         <ListRow
           label="Import & Export"
           icon={<Ionicons name="cloud-upload-outline" size={18} color={theme.text} />}
-          onPress={() => router.push('/settings/import-export' as any)}
+          onPress={() => {
+            lightImpact();
+            router.push('/settings/import-export' as any);
+          }}
           showChevron
         />
         <ListRow
           label="Backup & Restore"
           icon={<Ionicons name="save-outline" size={18} color={theme.text} />}
-          onPress={() => router.push('/settings/backup-restore' as any)}
+          onPress={() => {
+            lightImpact();
+            router.push('/settings/backup-restore' as any);
+          }}
           showChevron
         />
 
         <Text variant="caption" color="textMuted" style={styles.sectionLabel}>
-          GENERAL
+          PREFERENCES & SECURITY
         </Text>
         <ListRow
-          label="Haptics"
-          value="On"
+          label="Haptics Feedback"
+          value={hapticsEnabled ? 'On' : 'Off'}
           icon={<Ionicons name="phone-portrait-outline" size={18} color={theme.text} />}
+          onPress={() => {
+            lightImpact();
+            setHapticsEnabled(!hapticsEnabled);
+          }}
+          showChevron={false}
+        />
+        <ListRow
+          label="Sound Effects"
+          value={soundEnabled ? 'On' : 'Off'}
+          icon={<Ionicons name="volume-high-outline" size={18} color={theme.text} />}
+          onPress={() => {
+            lightImpact();
+            setSoundEnabled(!soundEnabled);
+          }}
           showChevron={false}
         />
         <ListRow
@@ -209,13 +299,27 @@ export default function SettingsScreen() {
         {__DEV__ && (
           <>
             <Text variant="caption" color="textMuted" style={styles.sectionLabel}>
-              DEVELOPER TOOLS (DEV BUILDS ONLY)
+              DEVELOPER BENCHMARK TOOLS (DEV BUILDS ONLY)
             </Text>
+            {loadingSample && (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator size="small" color={theme.accent} />
+                <Text variant="caption" color="textMuted" style={{ marginLeft: spacing.sm }}>
+                  Processing sample data transaction...
+                </Text>
+              </View>
+            )}
             <ListRow
-              label="Load Sample Data"
-              value={sampleDataActive ? 'Active (47 workouts)' : 'None'}
+              label="Load Sample Data (47 Workouts)"
+              value={sampleDataActive ? 'Active' : 'None'}
               icon={<Ionicons name="sparkles-outline" size={18} color={theme.accent} />}
-              onPress={handleLoadSample}
+              onPress={() => handleLoadSample(47)}
+            />
+            <ListRow
+              label="Load Benchmark Data (1,000 Workouts)"
+              value="Scale Test"
+              icon={<Ionicons name="speedometer-outline" size={18} color={theme.accent} />}
+              onPress={() => handleLoadSample(1000)}
             />
             {sampleDataActive && (
               <ListRow
@@ -227,6 +331,33 @@ export default function SettingsScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* Weekly Workout Goal Sheet (1 to 7 days/week) */}
+      <OptionMenuSheet
+        visible={showGoalModal}
+        onClose={() => setShowGoalModal(false)}
+        title="Weekly Workout Goal"
+        subtitle="Select how many days you aim to train each week"
+        options={[1, 2, 3, 4, 5, 6, 7].map((days) => ({
+          id: `goal-${days}`,
+          label: `${days} ${days === 1 ? 'day' : 'days'} / week`,
+          subtitle:
+            days === weeklyWorkoutGoal
+              ? 'Current Goal'
+              : days === 7
+              ? 'Every single day'
+              : days >= 5
+              ? 'High frequency routine'
+              : days >= 3
+              ? 'Recommended balance'
+              : 'Light routine',
+          icon: days === weeklyWorkoutGoal ? 'checkmark-circle' : 'calendar-outline',
+          onPress: () => {
+            lightImpact();
+            setWeeklyWorkoutGoal(days);
+          },
+        }))}
+      />
     </SafeAreaView>
   );
 }
@@ -245,5 +376,13 @@ const useStyles = createStyles((theme) => ({
     marginBottom: spacing.sm,
     marginLeft: spacing.xs,
     textTransform: 'uppercase',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.sm,
+    backgroundColor: theme.surface,
+    borderRadius: 8,
+    marginBottom: spacing.sm,
   },
 }));

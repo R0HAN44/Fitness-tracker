@@ -25,9 +25,13 @@ import {
   createCustomMeasurement,
   type MeasurementSummary,
 } from '../../src/db/queries/measurements';
+import { toDisplayWeight, toDatabaseWeight, toDisplayLength, toDatabaseLength } from '../../src/domain/units';
+import { useSettingsStore } from '../../src/state/settingsStore';
 
 export default function MeasurementsScreen() {
   const { theme } = useTheme();
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
+  const lengthUnit = useSettingsStore((s) => s.lengthUnit);
 
   const [measurements, setMeasurements] = useState<MeasurementSummary[]>([]);
   const [selectedMeasurement, setSelectedMeasurement] = useState<MeasurementSummary | null>(null);
@@ -60,10 +64,23 @@ export default function MeasurementsScreen() {
     router.push({ pathname: '/measurements/[id]', params: { id } } as any);
   };
 
+  const getDisplayUnit = (baseUnit: string) => {
+    if (baseUnit === 'kg') return weightUnit;
+    if (baseUnit === 'cm') return lengthUnit;
+    return baseUnit;
+  };
+
+  const formatMetricValue = (val: number, baseUnit: string) => {
+    if (baseUnit === 'kg') return toDisplayWeight(val, weightUnit, 0.1);
+    if (baseUnit === 'cm') return toDisplayLength(val, lengthUnit, 0.1);
+    return val;
+  };
+
   const handleOpenQuickLog = (m: MeasurementSummary) => {
     lightImpact();
     setSelectedMeasurement(m);
-    setLogValue(m.latestEntry ? String(m.latestEntry.value) : '');
+    const dispVal = m.latestEntry ? formatMetricValue(m.latestEntry.value, m.unit) : '';
+    setLogValue(dispVal !== '' ? String(dispVal) : '');
     setLogNotes('');
     setShowLogSheet(true);
   };
@@ -76,8 +93,15 @@ export default function MeasurementsScreen() {
       return;
     }
     lightImpact();
+    const baseValue =
+      selectedMeasurement.unit === 'kg'
+        ? toDatabaseWeight(num, weightUnit)
+        : selectedMeasurement.unit === 'cm'
+        ? toDatabaseLength(num, lengthUnit)
+        : num;
+
     addMeasurementEntry(selectedMeasurement.id, {
-      value: num,
+      value: Math.round(baseValue * 100) / 100,
       notes: logNotes.trim() || undefined,
     });
     setShowLogSheet(false);
@@ -202,9 +226,9 @@ export default function MeasurementsScreen() {
                 <View style={styles.cardValueRow}>
                   {m.latestEntry ? (
                     <Text variant="displaySm" style={{ fontWeight: '800' }} tabular>
-                      {m.latestEntry.value}{' '}
+                      {formatMetricValue(m.latestEntry.value, m.unit)}{' '}
                       <Text variant="bodySm" color="textMuted">
-                        {m.unit}
+                        {getDisplayUnit(m.unit)}
                       </Text>
                     </Text>
                   ) : (
@@ -224,7 +248,7 @@ export default function MeasurementsScreen() {
                         tabular
                       >
                         {isPositive ? '+' : ''}
-                        {m.deltaValue} {m.unit}
+                        {formatMetricValue(m.deltaValue!, m.unit)} {getDisplayUnit(m.unit)}
                       </Text>
                     </View>
                   )}
@@ -240,11 +264,12 @@ export default function MeasurementsScreen() {
         visible={showLogSheet}
         onClose={() => setShowLogSheet(false)}
         title={`Log ${selectedMeasurement?.name ?? 'Measurement'}`}
-        subtitle={`Unit: ${selectedMeasurement?.unit ?? ''}`}
+        subtitle={`Unit: ${selectedMeasurement ? getDisplayUnit(selectedMeasurement.unit) : ''}`}
+        scrollable
       >
         <View style={styles.form}>
           <Input
-            label={`Value (${selectedMeasurement?.unit ?? ''})`}
+            label={`Value (${selectedMeasurement ? getDisplayUnit(selectedMeasurement.unit) : ''})`}
             value={logValue}
             onChangeText={setLogValue}
             keyboardType="decimal-pad"
@@ -274,6 +299,7 @@ export default function MeasurementsScreen() {
         visible={showCreateSheet}
         onClose={() => setShowCreateSheet(false)}
         title="New Custom Measurement"
+        scrollable
       >
         <View style={styles.form}>
           <Input

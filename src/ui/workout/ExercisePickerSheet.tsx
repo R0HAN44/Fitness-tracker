@@ -95,6 +95,7 @@ export function ExercisePickerSheet({
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.chipsScrollView}
           contentContainerStyle={styles.chipsRow}
         >
           {MUSCLES.map((m) => (
@@ -111,6 +112,7 @@ export function ExercisePickerSheet({
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.chipsScrollViewLast}
           contentContainerStyle={styles.chipsRow}
         >
           {EQUIPMENT.map((eq) => (
@@ -176,23 +178,33 @@ export function ExercisePickerSheet({
 
 const styles = StyleSheet.create({
   container: {
-    height: Dimensions.get('window').height * 0.72,
+    height: Dimensions.get('window').height * 0.75,
   },
   searchInput: {
-    marginBottom: spacing.sm,
+    marginBottom: 6,
+  },
+  chipsScrollView: {
+    flexGrow: 0,
+    height: 36,
+    marginBottom: 6,
+  },
+  chipsScrollViewLast: {
+    flexGrow: 0,
+    height: 36,
+    marginBottom: 8,
   },
   chipsRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
-    paddingVertical: spacing.xs,
   },
   list: {
-    marginTop: spacing.sm,
+    marginTop: 2,
     flex: 1,
   },
   listContent: {
     paddingBottom: spacing['2xl'],
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   itemRow: {
     flexDirection: 'row',

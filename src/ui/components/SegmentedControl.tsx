@@ -58,7 +58,7 @@ export function SegmentedControl<T extends string | number>({
 
   React.useEffect(() => {
     if (segmentWidth > 0 && selectedIndex >= 0) {
-      translateX.value = withSpring(selectedIndex * segmentWidth, motion.fast);
+      translateX.value = withSpring(selectedIndex * segmentWidth, motion.switch);
     }
   }, [selectedIndex, segmentWidth]);
 

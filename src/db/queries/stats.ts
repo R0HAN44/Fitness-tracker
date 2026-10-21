@@ -102,7 +102,7 @@ export function getLifetimeStats(): LifetimeStats {
 /**
  * Get consistency heatmap data for the past N weeks.
  */
-export function getConsistencyHeatmap(weeks: number = 16): ConsistencyHeatmapData {
+export function getConsistencyHeatmap(weeks: number = 16, weekStart: number = 1): ConsistencyHeatmapData {
   const db = getDb();
   const rows = db
     .select({ startedAt: workouts.startedAt })
@@ -111,7 +111,7 @@ export function getConsistencyHeatmap(weeks: number = 16): ConsistencyHeatmapDat
     .all();
 
   const dates = rows.map((r) => r.startedAt).filter(Boolean);
-  return generateConsistencyHeatmap(dates, weeks);
+  return generateConsistencyHeatmap(dates, weeks, undefined, weekStart);
 }
 
 /**

@@ -178,6 +178,7 @@ export function generateConsistencyHeatmap(
   workoutDates: string[],
   weeks: number = 16,
   referenceDate: Date = new Date(),
+  weekStart: number = 1,
 ): ConsistencyHeatmapData {
   const countsByDate: Record<string, number> = {};
   for (const d of workoutDates) {
@@ -185,9 +186,9 @@ export function generateConsistencyHeatmap(
     countsByDate[key] = (countsByDate[key] ?? 0) + 1;
   }
 
-  // End on current week Sunday
+  // End on current week's final day (Sunday if weekStart=1, Saturday if weekStart=0)
   const end = new Date(referenceDate.getTime());
-  const dayOfWeek = (end.getDay() + 6) % 7; // 0=Mon, 6=Sun
+  const dayOfWeek = weekStart === 1 ? (end.getDay() + 6) % 7 : end.getDay();
   end.setDate(end.getDate() + (6 - dayOfWeek));
 
   // Total days = weeks * 7
@@ -210,7 +211,7 @@ export function generateConsistencyHeatmap(
     }
 
     const intensity: 0 | 1 | 2 | 3 = count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : 3;
-    const dow = (cur.getDay() + 6) % 7;
+    const dow = weekStart === 1 ? (cur.getDay() + 6) % 7 : cur.getDay();
 
     days.push({
       date: dateStr,

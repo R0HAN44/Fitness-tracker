@@ -6,7 +6,7 @@
  * so app restarts and kills restore the session seamlessly.
  */
 
-import { eq, and, isNull, desc, asc, ne } from 'drizzle-orm';
+import { eq, and, isNull, desc, asc, ne, inArray, sql } from 'drizzle-orm';
 import { getDb } from '../client';
 import {
   workouts,
@@ -929,108 +929,174 @@ export function getCompletedWorkouts(options?: {
 }): CompletedWorkoutSummary[] {
   const db = getDb();
 
-  let query = db
-    .select()
+  const conditions = [
+    eq(workouts.status, 'completed'),
+    isNull(workouts.deletedAt),
+  ];
+
+  if (options?.date) {
+    conditions.push(sql`substr(${workouts.startedAt}, 1, 10) = ${options.date}`);
+  }
+
+  let workoutQuery = db
+    .select({
+      id: workouts.id,
+      title: workouts.title,
+      startedAt: workouts.startedAt,
+      finishedAt: workouts.finishedAt,
+      durationSeconds: workouts.durationSeconds,
+      notes: workouts.notes,
+      totalVolumeKg: workouts.totalVolumeKg,
+    })
     .from(workouts)
-    .where(and(eq(workouts.status, 'completed'), isNull(workouts.deletedAt)))
+    .where(and(...conditions))
     .orderBy(desc(workouts.startedAt));
 
-  const rows = query.all();
+  if (options?.limit != null) {
+    workoutQuery = (workoutQuery as any).limit(options.limit);
+  }
+  if (options?.offset != null) {
+    workoutQuery = (workoutQuery as any).offset(options.offset);
+  }
 
-  const filteredRows = options?.date
-    ? rows.filter((w) => w.startedAt.slice(0, 10) === options.date)
-    : rows;
+  const pageWorkouts = workoutQuery.all();
+  if (pageWorkouts.length === 0) return [];
 
-  const paginated = options?.limit
-    ? filteredRows.slice(options.offset ?? 0, (options.offset ?? 0) + options.limit)
-    : filteredRows;
+  const workoutIds = pageWorkouts.map((w) => w.id);
 
-  const summaries: CompletedWorkoutSummary[] = [];
+  // Bulk query 1: Fetch exercises for these page workouts
+  const exerciseRows = db
+    .select({
+      workoutId: workoutExercises.workoutId,
+      workoutExerciseId: workoutExercises.id,
+      exerciseId: workoutExercises.exerciseId,
+      name: exercises.name,
+      sortOrder: workoutExercises.sortOrder,
+    })
+    .from(workoutExercises)
+    .innerJoin(exercises, eq(workoutExercises.exerciseId, exercises.id))
+    .where(
+      and(
+        inArray(workoutExercises.workoutId, workoutIds),
+        isNull(workoutExercises.deletedAt),
+      ),
+    )
+    .orderBy(asc(workoutExercises.sortOrder))
+    .all();
 
-  for (const w of paginated) {
-    const weRows = db
+  const weIds = exerciseRows.map((e) => e.workoutExerciseId);
+
+  // Bulk query 2: Fetch completed sets for these exercises
+  const setsByWeId: Record<
+    string,
+    Array<{ id: string; weightKg: number | null; reps: number | null }>
+  > = {};
+  const allSetIds: string[] = [];
+
+  if (weIds.length > 0) {
+    const setRows = db
       .select({
-        id: workoutExercises.id,
-        exerciseId: workoutExercises.exerciseId,
-        name: exercises.name,
+        id: workoutSets.id,
+        workoutExerciseId: workoutSets.workoutExerciseId,
+        weightKg: workoutSets.weightKg,
+        reps: workoutSets.reps,
       })
-      .from(workoutExercises)
-      .innerJoin(exercises, eq(workoutExercises.exerciseId, exercises.id))
-      .where(and(eq(workoutExercises.workoutId, w.id), isNull(workoutExercises.deletedAt)))
-      .orderBy(asc(workoutExercises.sortOrder))
+      .from(workoutSets)
+      .where(
+        and(
+          inArray(workoutSets.workoutExerciseId, weIds),
+          eq(workoutSets.isCompleted, true),
+          isNull(workoutSets.deletedAt),
+        ),
+      )
+      .orderBy(asc(workoutSets.setIndex))
       .all();
 
-    const exSummaries: CompletedWorkoutSummary['exerciseSummaries'] = [];
-    const allWorkoutSetIds: string[] = [];
-
-    for (const we of weRows) {
-      const sets = db
-        .select()
-        .from(workoutSets)
-        .where(
-          and(
-            eq(workoutSets.workoutExerciseId, we.id),
-            eq(workoutSets.isCompleted, true),
-            isNull(workoutSets.deletedAt),
-          ),
-        )
-        .orderBy(asc(workoutSets.setIndex))
-        .all();
-
-      for (const s of sets) {
-        allWorkoutSetIds.push(s.id);
+    for (const s of setRows) {
+      allSetIds.push(s.id);
+      if (!setsByWeId[s.workoutExerciseId]) {
+        setsByWeId[s.workoutExerciseId] = [];
       }
+      setsByWeId[s.workoutExerciseId].push(s);
+    }
+  }
 
-      // Best set calculation (heaviest completed set)
-      let bestSetText: string | null = null;
-      let maxWeight = -1;
-      let maxReps = -1;
+  // Bulk query 3: Fetch PR set IDs for these sets in ONE query
+  const prSetIds = new Set<string>();
+  if (allSetIds.length > 0) {
+    const prRows = db
+      .select({ workoutSetId: exercisePersonalRecords.workoutSetId })
+      .from(exercisePersonalRecords)
+      .where(
+        and(
+          inArray(exercisePersonalRecords.workoutSetId, allSetIds),
+          isNull(exercisePersonalRecords.deletedAt),
+        ),
+      )
+      .all();
 
-      for (const s of sets) {
-        const wt = s.weightKg ?? 0;
-        const reps = s.reps ?? 0;
-        if (wt > maxWeight || (wt === maxWeight && reps > maxReps)) {
-          maxWeight = wt;
-          maxReps = reps;
+    for (const pr of prRows) {
+      prSetIds.add(pr.workoutSetId);
+    }
+  }
+
+  // Aggregate into map in O(N) linear time
+  const workoutDataMap: Record<
+    string,
+    {
+      prCount: number;
+      exerciseSummaries: Array<{
+        exerciseId: string;
+        name: string;
+        setCount: number;
+        bestSetSummary: string | null;
+      }>;
+    }
+  > = {};
+
+  for (const wId of workoutIds) {
+    workoutDataMap[wId] = { prCount: 0, exerciseSummaries: [] };
+  }
+
+  for (const we of exerciseRows) {
+    const sets = setsByWeId[we.workoutExerciseId] ?? [];
+    let maxWeight = -1;
+    let maxReps = -1;
+
+    for (const s of sets) {
+      if (prSetIds.has(s.id)) {
+        if (workoutDataMap[we.workoutId]) {
+          workoutDataMap[we.workoutId].prCount++;
         }
       }
-
-      if (maxWeight > 0) {
-        bestSetText = `${maxWeight} kg × ${maxReps}`;
-      } else if (maxReps > 0) {
-        bestSetText = `${maxReps} reps`;
+      const wt = s.weightKg ?? 0;
+      const reps = s.reps ?? 0;
+      if (wt > maxWeight || (wt === maxWeight && reps > maxReps)) {
+        maxWeight = wt;
+        maxReps = reps;
       }
+    }
 
-      exSummaries.push({
+    let bestSetText: string | null = null;
+    if (maxWeight > 0) {
+      bestSetText = `${maxWeight} kg × ${maxReps}`;
+    } else if (maxReps > 0) {
+      bestSetText = `${maxReps} reps`;
+    }
+
+    if (workoutDataMap[we.workoutId]) {
+      workoutDataMap[we.workoutId].exerciseSummaries.push({
         exerciseId: we.exerciseId,
         name: we.name,
         setCount: sets.length,
         bestSetSummary: bestSetText,
       });
     }
+  }
 
-    // PR count in this workout
-    let prCount = 0;
-    if (allWorkoutSetIds.length > 0) {
-      const prs = db
-        .select({ id: exercisePersonalRecords.id })
-        .from(exercisePersonalRecords)
-        .where(isNull(exercisePersonalRecords.deletedAt))
-        .all();
-
-      const setSet = new Set(allWorkoutSetIds);
-      const prsForWorkout = prs.filter((p) => {
-        const fullPr = db
-          .select({ workoutSetId: exercisePersonalRecords.workoutSetId })
-          .from(exercisePersonalRecords)
-          .where(eq(exercisePersonalRecords.id, p.id))
-          .get();
-        return fullPr && setSet.has(fullPr.workoutSetId);
-      });
-      prCount = prsForWorkout.length;
-    }
-
-    summaries.push({
+  return pageWorkouts.map((w) => {
+    const data = workoutDataMap[w.id] ?? { prCount: 0, exerciseSummaries: [] };
+    return {
       id: w.id,
       title: w.title,
       startedAt: w.startedAt,
@@ -1038,12 +1104,10 @@ export function getCompletedWorkouts(options?: {
       durationSeconds: w.durationSeconds,
       notes: w.notes,
       totalVolumeKg: w.totalVolumeKg,
-      prCount,
-      exerciseSummaries: exSummaries,
-    });
-  }
-
-  return summaries;
+      prCount: data.prCount,
+      exerciseSummaries: data.exerciseSummaries,
+    };
+  });
 }
 
 /**

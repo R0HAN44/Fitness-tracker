@@ -22,14 +22,20 @@ import {
   getCompletedWorkoutDates,
   type CompletedWorkoutSummary,
 } from '../../src/db/queries/workouts';
+import { useSettingsStore } from '../../src/state/settingsStore';
 
 type ViewMode = 'list' | 'calendar';
 
+const PAGE_SIZE = 20;
+
 export default function HistoryScreen() {
   const { theme } = useTheme();
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [workoutsList, setWorkoutsList] = useState<CompletedWorkoutSummary[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(0);
   const [workoutDatesSet, setWorkoutDatesSet] = useState<Set<string>>(new Set());
 
   // Calendar navigation state
@@ -41,14 +47,33 @@ export default function HistoryScreen() {
 
   const reloadData = useCallback(() => {
     try {
-      const all = getCompletedWorkouts();
-      setWorkoutsList(all);
+      const initial = getCompletedWorkouts({ limit: PAGE_SIZE, offset: 0 });
+      setWorkoutsList(initial);
+      setPage(1);
+      setHasMore(initial.length === PAGE_SIZE);
+
       const dates = getCompletedWorkoutDates();
       setWorkoutDatesSet(new Set(dates));
     } catch (e) {
       console.error('Error loading completed workouts:', e);
     }
   }, []);
+
+  const loadMoreWorkouts = useCallback(() => {
+    if (!hasMore || viewMode !== 'list') return;
+    try {
+      const nextPage = getCompletedWorkouts({ limit: PAGE_SIZE, offset: page * PAGE_SIZE });
+      if (nextPage.length > 0) {
+        setWorkoutsList((prev) => [...prev, ...nextPage]);
+        setPage((p) => p + 1);
+        setHasMore(nextPage.length === PAGE_SIZE);
+      } else {
+        setHasMore(false);
+      }
+    } catch (e) {
+      console.error('Error loading more workouts:', e);
+    }
+  }, [hasMore, page, viewMode]);
 
   useFocusEffect(
     useCallback(() => {
@@ -127,8 +152,8 @@ export default function HistoryScreen() {
     >
       {/* Top Header */}
       <View style={styles.cardHeader}>
-        <View style={{ flex: 1 }}>
-          <Text variant="headingSm" style={{ fontWeight: '700' }}>
+        <View style={{ flex: 1, marginRight: spacing.sm }}>
+          <Text variant="headingSm" numberOfLines={1} ellipsizeMode="tail" style={{ fontWeight: '700' }}>
             {workout.title ?? 'Workout'}
           </Text>
           <Text variant="caption" color="textMuted" style={{ marginTop: 2 }}>
@@ -137,7 +162,7 @@ export default function HistoryScreen() {
         </View>
 
         {workout.prCount > 0 && (
-          <View style={[styles.prBadge, { backgroundColor: theme.prGold + '22', borderColor: theme.prGold }]}>
+          <View style={[styles.prBadge, { backgroundColor: theme.prGold + '22', borderColor: theme.prGold, flexShrink: 0 }]}>
             <Text variant="caption" style={{ color: theme.prGold, fontSize: 11, fontWeight: '800' }}>
               🏆 {workout.prCount} PR{workout.prCount === 1 ? '' : 's'}
             </Text>
@@ -173,7 +198,7 @@ export default function HistoryScreen() {
         <View style={styles.footerStat}>
           <Ionicons name="barbell-outline" size={14} color={theme.textMuted} />
           <Text variant="caption" color="textMuted" tabular>
-            {formatWeight(workout.totalVolumeKg ?? 0, 'kg')}
+            {formatWeight(workout.totalVolumeKg ?? 0, weightUnit)}
           </Text>
         </View>
 
@@ -224,8 +249,18 @@ export default function HistoryScreen() {
 
       {/* ───────────────── LIST VIEW ───────────────── */}
       {viewMode === 'list' && (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {workoutsList.length === 0 ? (
+        <FlatList
+          data={workoutsList}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => renderWorkoutCard(item)}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          onEndReached={loadMoreWorkouts}
+          onEndReachedThreshold={0.5}
+          ListEmptyComponent={
             <View style={[styles.emptyState, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Ionicons name="barbell-outline" size={48} color={theme.textMuted} />
               <Text variant="headingSm" style={{ marginTop: spacing.sm }}>No Workouts Yet</Text>
@@ -239,10 +274,8 @@ export default function HistoryScreen() {
                 style={{ marginTop: spacing.base }}
               />
             </View>
-          ) : (
-            workoutsList.map(renderWorkoutCard)
-          )}
-        </ScrollView>
+          }
+        />
       )}
 
       {/* ───────────────── CALENDAR VIEW ───────────────── */}

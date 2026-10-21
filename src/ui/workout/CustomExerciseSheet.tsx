@@ -272,16 +272,23 @@ const styles = StyleSheet.create({
   },
   chipRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
     paddingVertical: 2,
   },
   chip: {
+    height: 32,
+    alignSelf: 'center',
+    flexGrow: 0,
+    flexShrink: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
     borderRadius: radii.full,
     borderWidth: 1,
   },
   buttonContainer: {
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
+    marginBottom: spacing.xl,
   },
 });

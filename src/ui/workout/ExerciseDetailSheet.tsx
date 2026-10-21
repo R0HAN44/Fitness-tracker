@@ -23,6 +23,7 @@ import { filterExerciseProgression, type TimeRange } from '../../domain/stats';
 import { lightImpact } from '../../lib/haptics';
 import { Ionicons } from '@expo/vector-icons';
 import type { ExerciseRow } from '../../db/queries/exercises';
+import { useSettingsStore } from '../../state/settingsStore';
 import {
   determineMovementType,
   getExerciseInstructions,
@@ -57,6 +58,7 @@ export function ExerciseDetailSheet({
   onRestSecondsChange,
 }: ExerciseDetailSheetProps) {
   const { theme } = useTheme();
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
   const [activeTab, setActiveTab] = useState<TabType>('about');
   const [restSeconds, setRestSeconds] = useState(exercise?.defaultRestSeconds ?? 90);
 
@@ -181,8 +183,8 @@ export function ExerciseDetailSheet({
           <SegmentedControl
             options={[
               { label: 'About', value: 'about' },
-              { label: `History (${historyList.length})`, value: 'history' },
-              { label: `Records (${prList.length})`, value: 'records' },
+              { label: 'History', value: 'history' },
+              { label: 'Records', value: 'records' },
               { label: 'Charts', value: 'charts' },
             ]}
             value={activeTab}
@@ -193,7 +195,11 @@ export function ExerciseDetailSheet({
           />
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
           {/* ───────────────── ABOUT TAB ───────────────── */}
           {activeTab === 'about' && (
             <>
@@ -423,7 +429,7 @@ export function ExerciseDetailSheet({
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
                         <Text variant="caption" color="accent" tabular style={{ fontWeight: '700' }}>
-                          {formatWeight(session.totalVolumeKg, 'kg')}
+                          {formatWeight(session.totalVolumeKg, weightUnit)}
                         </Text>
                         <Text variant="caption" color="textMuted">
                           {session.sets.length} {session.sets.length === 1 ? 'set' : 'sets'}
@@ -434,56 +440,62 @@ export function ExerciseDetailSheet({
                     {/* Sets list */}
                     <View style={styles.setsList}>
                       {session.sets.map((s) => (
-                        <View key={s.id} style={styles.historySetRow}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, width: 60 }}>
-                            <Text variant="caption" color="textMuted" style={{ fontWeight: '700' }} tabular>
-                              {s.setIndex}
-                            </Text>
-                            {s.setType !== 'normal' && (
-                              <View
-                                style={[
-                                  styles.setTypeMini,
-                                  {
-                                    backgroundColor:
-                                      s.setType === 'warmup' ? theme.setWarmup + '22' :
-                                      s.setType === 'drop' ? theme.setDrop + '22' : theme.setFailure + '22',
-                                  },
-                                ]}
-                              >
-                                <Text
-                                  style={{
-                                    fontSize: 9,
-                                    fontWeight: '800',
-                                    color:
-                                      s.setType === 'warmup' ? theme.setWarmup :
-                                      s.setType === 'drop' ? theme.setDrop : theme.setFailure,
-                                  }}
+                        <View key={s.id} style={styles.historySetContainer}>
+                          <View style={styles.historySetRow}>
+                            <View style={styles.historySetLeft}>
+                              <Text variant="caption" color="textMuted" style={styles.setNumber} tabular>
+                                {s.setIndex}
+                              </Text>
+                              {s.setType !== 'normal' && (
+                                <View
+                                  style={[
+                                    styles.setTypeMini,
+                                    {
+                                      backgroundColor:
+                                        s.setType === 'warmup' ? theme.setWarmup + '22' :
+                                        s.setType === 'drop' ? theme.setDrop + '22' : theme.setFailure + '22',
+                                    },
+                                  ]}
                                 >
-                                  {s.setType[0].toUpperCase()}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
+                                  <Text
+                                    style={{
+                                      fontSize: 9,
+                                      fontWeight: '800',
+                                      color:
+                                        s.setType === 'warmup' ? theme.setWarmup :
+                                        s.setType === 'drop' ? theme.setDrop : theme.setFailure,
+                                    }}
+                                  >
+                                    {s.setType[0].toUpperCase()}
+                                  </Text>
+                                </View>
+                              )}
 
-                          <Text variant="bodySm" style={{ flex: 1, fontWeight: '600' }} tabular>
-                            {s.weightKg != null ? `${s.weightKg} kg × ` : ''}{s.reps ?? 0} reps
-                            {s.rpe ? ` @ RPE ${s.rpe}` : ''}
-                          </Text>
+                              <Text variant="bodySm" style={styles.setWeightReps} tabular numberOfLines={1}>
+                                {s.weightKg != null ? `${formatWeight(s.weightKg, weightUnit)} × ` : ''}{s.reps ?? 0} reps
+                                {s.rpe ? ` @ RPE ${s.rpe}` : ''}
+                              </Text>
+                            </View>
 
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                             {s.estimated1rm > 0 && (
-                              <Text variant="caption" color="textMuted" tabular>
-                                e1RM: {s.estimated1rm}kg
+                              <Text variant="caption" color="textMuted" tabular style={styles.e1rmText}>
+                                e1RM: {formatWeight(s.estimated1rm, weightUnit)}
                               </Text>
                             )}
-                            {s.prBadges.map((badge, bIdx) => (
-                              <View key={bIdx} style={[styles.prBadge, { backgroundColor: theme.prGold + '22' }]}>
-                                <Text style={{ color: theme.prGold, fontSize: 9, fontWeight: '800' }}>
-                                  🏆 {badge}
-                                </Text>
-                              </View>
-                            ))}
                           </View>
+
+                          {/* PR Badges row: wraps cleanly underneath, never squishing main metrics */}
+                          {s.prBadges.length > 0 && (
+                            <View style={styles.prBadgesRow}>
+                              {s.prBadges.map((badge, bIdx) => (
+                                <View key={bIdx} style={[styles.prBadge, { backgroundColor: theme.prGold + '22' }]}>
+                                  <Text style={{ color: theme.prGold, fontSize: 10, fontWeight: '700' }}>
+                                    🏆 {badge}
+                                  </Text>
+                                </View>
+                              ))}
+                            </View>
+                          )}
                         </View>
                       ))}
                     </View>
@@ -513,9 +525,11 @@ export function ExerciseDetailSheet({
                       pr.recordType === 'best_set_volume' ? 'Best Set Volume' : 'Max Reps at Weight';
 
                     const valueDisplay =
-                      pr.recordType === 'best_set_volume' ? `${pr.value} kg` :
-                      pr.recordType === 'max_reps_at_weight' ? `${pr.value} reps @ ${pr.weightKg} kg` :
-                      `${pr.value} kg`;
+                      pr.recordType === 'best_set_volume'
+                        ? formatWeight(pr.value, weightUnit)
+                        : pr.recordType === 'max_reps_at_weight'
+                        ? `${pr.value} reps @ ${formatWeight(pr.weightKg, weightUnit)}`
+                        : formatWeight(pr.value, weightUnit);
 
                     return (
                       <View
@@ -639,7 +653,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: spacing.base,
-    paddingBottom: spacing['4xl'],
+    paddingBottom: spacing['5xl'],
     gap: spacing.base,
   },
   badgeRow: {
@@ -727,22 +741,49 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xs,
   },
   setsList: {
-    gap: spacing.xs,
+    gap: spacing.sm,
+  },
+  historySetContainer: {
+    paddingVertical: 3,
   },
   historySetRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+  },
+  historySetLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  setNumber: {
+    fontWeight: '700',
+    width: 18,
+  },
+  setWeightReps: {
+    fontWeight: '600',
+    flex: 1,
+  },
+  e1rmText: {
+    flexShrink: 0,
+    marginLeft: 8,
+  },
+  prBadgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+    paddingLeft: 26,
   },
   setTypeMini: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 3,
   },
   prBadge: {
-    paddingHorizontal: 4,
-    paddingVertical: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 4,
   },
   prGrid: {

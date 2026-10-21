@@ -140,14 +140,33 @@ export const shadows = {
 export type ShadowToken = keyof typeof shadows;
 
 // ────────────────────────────────────────────────────────────────────
-// Motion (spring configs for reanimated)
+// Motion (premium, firm springs & fast timings)
+// Targets:
+//   - modal/sheet open: 200-240ms, close: 180ms
+//   - tab/chip/segment switch: 120-160ms
+//   - press feedback: <100ms
+//   - list transitions: <200ms
 // ────────────────────────────────────────────────────────────────────
 
 export const motion = {
-  instant: { duration: 100 },
-  fast: { damping: 15, stiffness: 150 },
-  normal: { damping: 18, stiffness: 120 },
-  slow: { damping: 20, stiffness: 100 },
+  /** Immediate press feedback (<100ms) */
+  press: { duration: 80 },
+  /** Fast tab / segment / chip switches (120-160ms) */
+  switch: { damping: 32, stiffness: 360, mass: 0.7 },
+  /** Sheet open firm spring (200-220ms, well-damped, zero wobble) */
+  sheetOpen: { damping: 28, stiffness: 280, mass: 0.8 },
+  /** Sheet close timing (180ms) */
+  sheetCloseDuration: 180,
+  /** Modal open/close timing (200ms) */
+  modalDuration: 200,
+  /** List item transition duration (160ms) */
+  listTransitionDuration: 160,
+  /** Instant transition */
+  instant: { duration: 50 },
+  /** Legacy / generic spring tokens (retuned to firm) */
+  fast: { damping: 30, stiffness: 320, mass: 0.8 },
+  normal: { damping: 28, stiffness: 260, mass: 0.8 },
+  slow: { damping: 26, stiffness: 200, mass: 0.9 },
 } as const;
 
 export type MotionToken = keyof typeof motion;

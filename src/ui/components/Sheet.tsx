@@ -10,16 +10,18 @@
  *   - Safe area bottom padding
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
   View,
   Pressable,
   StyleSheet,
   type ViewStyle,
-  KeyboardAvoidingView,
   Platform,
   Dimensions,
+  AccessibilityInfo,
+  Keyboard,
+  ScrollView,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -47,8 +49,10 @@ export interface SheetProps {
   title?: string;
   subtitle?: string;
   children: React.ReactNode;
+  footer?: React.ReactNode;
   maxHeight?: number;
   containerStyle?: ViewStyle;
+  scrollable?: boolean;
 }
 
 export function Sheet({
@@ -57,31 +61,75 @@ export function Sheet({
   title,
   subtitle,
   children,
+  footer,
   maxHeight = SCREEN_HEIGHT * 0.85,
   containerStyle,
+  scrollable = false,
 }: SheetProps) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
 
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
   const translateY = useSharedValue(SCREEN_HEIGHT);
   const backdropOpacity = useSharedValue(0);
 
+  // Detect system reduce-motion setting
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => sub.remove();
+  }, []);
+
+  // Keyboard listeners for Android edge-to-edge & iOS
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const closeSheet = () => {
-    translateY.value = withTiming(SCREEN_HEIGHT, { duration: 250 }, () => {
+    if (reduceMotion) {
+      translateY.value = SCREEN_HEIGHT;
+      backdropOpacity.value = 0;
+      onClose();
+      return;
+    }
+    // Fast close (180ms) with matching backdrop fade
+    translateY.value = withTiming(SCREEN_HEIGHT, { duration: motion.sheetCloseDuration }, () => {
       runOnJS(onClose)();
     });
-    backdropOpacity.value = withTiming(0, { duration: 200 });
+    backdropOpacity.value = withTiming(0, { duration: motion.sheetCloseDuration });
   };
 
   useEffect(() => {
     if (visible) {
-      translateY.value = withSpring(0, motion.normal);
-      backdropOpacity.value = withTiming(0.6, { duration: 250 });
+      if (reduceMotion) {
+        translateY.value = 0;
+        backdropOpacity.value = 0.6;
+      } else {
+        // Fast open (firm spring, well-damped, no wobble)
+        translateY.value = withSpring(0, motion.sheetOpen);
+        backdropOpacity.value = withTiming(0.6, { duration: 200 });
+      }
     } else {
       translateY.value = SCREEN_HEIGHT;
       backdropOpacity.value = 0;
+      setKeyboardHeight(0);
     }
-  }, [visible]);
+  }, [visible, reduceMotion]);
 
   const panGesture = Gesture.Pan()
     .onUpdate((event) => {
@@ -107,6 +155,10 @@ export function Sheet({
 
   if (!visible) return null;
 
+  const effectiveMaxHeight = keyboardHeight > 0
+    ? Math.max(260, SCREEN_HEIGHT - keyboardHeight - insets.top - 20)
+    : maxHeight;
+
   return (
     <Modal
       transparent
@@ -115,10 +167,7 @@ export function Sheet({
       onRequestClose={closeSheet}
       statusBarTranslucent
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.overlay}
-      >
+      <View style={styles.overlay}>
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={() => {
@@ -142,8 +191,9 @@ export function Sheet({
               {
                 backgroundColor: theme.elevated,
                 borderColor: theme.border,
-                maxHeight,
-                paddingBottom: Math.max(insets.bottom, spacing.base),
+                maxHeight: effectiveMaxHeight,
+                marginBottom: keyboardHeight > 0 ? keyboardHeight : 0,
+                paddingBottom: keyboardHeight > 0 ? spacing.sm : footer ? 0 : Math.max(insets.bottom, spacing.base),
               },
               sheetAnimatedStyle,
               containerStyle,
@@ -188,11 +238,38 @@ export function Sheet({
               </View>
             )}
 
-            {/* Content */}
-            <View style={styles.content}>{children}</View>
+            {/* Content Body */}
+            {scrollable ? (
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                style={{ flex: 1 }}
+                contentContainerStyle={[styles.content, { paddingBottom: spacing.lg }]}
+              >
+                {children}
+              </ScrollView>
+            ) : (
+              <View style={[styles.content, { flex: 1, minHeight: 0 }]}>{children}</View>
+            )}
+
+            {/* Pinned Footer */}
+            {footer && (
+              <View
+                style={[
+                  styles.sheetFooter,
+                  {
+                    borderTopColor: theme.border,
+                    backgroundColor: theme.elevated,
+                    paddingBottom: Math.max(insets.bottom, spacing.base),
+                  },
+                ]}
+              >
+                {footer}
+              </View>
+            )}
           </Animated.View>
         </GestureDetector>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -244,5 +321,10 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.base,
     paddingTop: spacing.xs,
+  },
+  sheetFooter: {
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

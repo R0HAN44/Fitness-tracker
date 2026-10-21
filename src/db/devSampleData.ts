@@ -143,7 +143,7 @@ export function clearSampleData(): { deletedWorkoutsCount: number; deletedEntrie
  *   - 16 bodyweight entries + 24 other body tracking entries
  *   - Automatic PR computation for key lifts
  */
-export function loadSampleData(): SampleDataSummary {
+export function loadSampleData(count: number = 47): SampleDataSummary {
   if (!__DEV__) {
     throw new Error('Sample data operations are only allowed in development builds.');
   }
@@ -267,7 +267,7 @@ export function loadSampleData(): SampleDataSummary {
         },
       ],
     },
-    // 2: Legs & Core Day
+    // 2: Legs & Core
     {
       title: 'Legs & Core',
       exercises: (p) => [
@@ -286,7 +286,7 @@ export function loadSampleData(): SampleDataSummary {
           working: [
             { weight: Math.round(70 + 35 * p), reps: 8 },
             { weight: Math.round(75 + 35 * p), reps: 8 },
-            { weight: Math.round(80 + 35 * p), reps: 6 },
+            { weight: Math.round(80 + 35 * p), reps: 8 },
           ],
         },
         {
@@ -306,32 +306,25 @@ export function loadSampleData(): SampleDataSummary {
   let totalEntriesGenerated = 0;
 
   rawDb.withTransactionSync(() => {
-    // Generate 47 completed workouts over 16 weeks (weeks 15 down to 0)
-    for (let week = 15; week >= 0; week--) {
-      // Week 0 has 2 workouts (Mon, Wed) -> leaves 2/4 progress for this week!
-      // Weeks 1..15 have 3 workouts (Mon, Wed, Fri) -> 16 week streak!
-      const daysCount = week === 0 ? 2 : 3;
-
-      for (let day = 0; day < daysCount; day++) {
-        const daysAgo = week * 7 + (daysCount === 2 ? (day === 0 ? 3 : 1) : [5, 3, 1][day]);
+    if (count >= 500) {
+      // Large-scale generation: exactly `count` workouts (e.g. 1000)
+      const daysSpan = Math.ceil(count * 1.6);
+      for (let i = count - 1; i >= 0; i--) {
+        const daysAgo = Math.floor((i / count) * daysSpan);
         const workoutDate = new Date(nowMs - daysAgo * 86400000);
-        // Start workout at 18:00
-        workoutDate.setHours(18, 0, 0, 0);
+        workoutDate.setHours(17 + (i % 4), (i * 13) % 60, 0, 0);
         const startedAt = workoutDate.toISOString();
-        const durationSeconds = 3000 + Math.floor(Math.random() * 900); // 50 to 65 mins
+        const durationSeconds = 3000 + (i % 60) * 15;
         const finishedAt = new Date(workoutDate.getTime() + durationSeconds * 1000).toISOString();
 
-        const templateIdx = (15 - week + day) % 3;
+        const templateIdx = i % templates.length;
         const template = templates[templateIdx];
-
-        // Progress factor: 0.0 (15 weeks ago) -> 1.0 (today)
-        const progressFactor = Math.min(1.0, Math.max(0.0, (15 - week + day * 0.3) / 15));
+        const progressFactor = Math.min(1.0, Math.max(0.0, 1 - i / count));
         const plannedExercises = template.exercises(progressFactor);
 
-        const workoutId = `sample_workout_${week}_${day}`;
+        const workoutId = `sample_workout_${i}`;
         let workoutVolume = 0;
 
-        // Insert workout row
         rawDb.runSync(
           `INSERT INTO workouts (id, title, started_at, finished_at, duration_seconds, notes, total_volume_kg, status, import_source, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', 'sample_data', ?, ?)`,
@@ -341,8 +334,8 @@ export function loadSampleData(): SampleDataSummary {
             startedAt,
             finishedAt,
             durationSeconds,
-            '[sample_data] Generated for testing',
-            0, // will update below
+            '[sample_data] Large-scale sample workout',
+            0,
             startedAt,
             startedAt,
           ],
@@ -350,10 +343,9 @@ export function loadSampleData(): SampleDataSummary {
 
         totalWorkoutsGenerated++;
 
-        // Insert workout exercises and sets
         for (let eIdx = 0; eIdx < plannedExercises.length; eIdx++) {
           const exPlan = plannedExercises[eIdx];
-          const weId = `sample_we_${week}_${day}_${eIdx}`;
+          const weId = `sample_we_${i}_${eIdx}`;
 
           rawDb.runSync(
             `INSERT INTO workout_exercises (id, workout_id, exercise_id, sort_order, created_at, updated_at)
@@ -361,33 +353,98 @@ export function loadSampleData(): SampleDataSummary {
             [weId, workoutId, exPlan.exerciseId, eIdx, startedAt, startedAt],
           );
 
-          // 1. Warmup set (volume excluded)
-          const wsWarmupId = `sample_ws_${week}_${day}_${eIdx}_0`;
-          rawDb.runSync(
-            `INSERT INTO workout_sets (id, workout_exercise_id, set_index, set_type, weight_kg, reps, is_completed, created_at, updated_at)
-             VALUES (?, ?, ?, 'warmup', ?, ?, 1, ?, ?)`,
-            [wsWarmupId, weId, 0, exPlan.warmup.weight, exPlan.warmup.reps, startedAt, startedAt],
-          );
-
-          // 2. Working sets (volume included)
           for (let sIdx = 0; sIdx < exPlan.working.length; sIdx++) {
             const setObj = exPlan.working[sIdx];
-            const wsWorkingId = `sample_ws_${week}_${day}_${eIdx}_${sIdx + 1}`;
+            const wsWorkingId = `sample_ws_${i}_${eIdx}_${sIdx}`;
             rawDb.runSync(
               `INSERT INTO workout_sets (id, workout_exercise_id, set_index, set_type, weight_kg, reps, is_completed, created_at, updated_at)
                VALUES (?, ?, ?, 'normal', ?, ?, 1, ?, ?)`,
-              [wsWorkingId, weId, sIdx + 1, setObj.weight, setObj.reps, startedAt, startedAt],
+              [wsWorkingId, weId, sIdx, setObj.weight, setObj.reps, startedAt, startedAt],
             );
-
             workoutVolume += setObj.weight * setObj.reps;
           }
         }
 
-        // Update workout total volume
-        rawDb.runSync(
-          `UPDATE workouts SET total_volume_kg = ? WHERE id = ?`,
-          [workoutVolume, workoutId],
-        );
+        rawDb.runSync(`UPDATE workouts SET total_volume_kg = ? WHERE id = ?`, [
+          workoutVolume,
+          workoutId,
+        ]);
+      }
+    } else {
+      // Standard 47 completed workouts over 16 weeks
+      for (let week = 15; week >= 0; week--) {
+        const daysCount = week === 0 ? 2 : 3;
+
+        for (let day = 0; day < daysCount; day++) {
+          const daysAgo = week * 7 + (daysCount === 2 ? (day === 0 ? 3 : 1) : [5, 3, 1][day]);
+          const workoutDate = new Date(nowMs - daysAgo * 86400000);
+          workoutDate.setHours(18, 0, 0, 0);
+          const startedAt = workoutDate.toISOString();
+          const durationSeconds = 3000 + Math.floor(Math.random() * 900);
+          const finishedAt = new Date(workoutDate.getTime() + durationSeconds * 1000).toISOString();
+
+          const templateIdx = (15 - week + day) % 3;
+          const template = templates[templateIdx];
+          const progressFactor = Math.min(1.0, Math.max(0.0, (15 - week + day * 0.3) / 15));
+          const plannedExercises = template.exercises(progressFactor);
+
+          const workoutId = `sample_workout_${week}_${day}`;
+          let workoutVolume = 0;
+
+          rawDb.runSync(
+            `INSERT INTO workouts (id, title, started_at, finished_at, duration_seconds, notes, total_volume_kg, status, import_source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', 'sample_data', ?, ?)`,
+            [
+              workoutId,
+              template.title,
+              startedAt,
+              finishedAt,
+              durationSeconds,
+              '[sample_data] Generated for testing',
+              0,
+              startedAt,
+              startedAt,
+            ],
+          );
+
+          totalWorkoutsGenerated++;
+
+          for (let eIdx = 0; eIdx < plannedExercises.length; eIdx++) {
+            const exPlan = plannedExercises[eIdx];
+            const weId = `sample_we_${week}_${day}_${eIdx}`;
+
+            rawDb.runSync(
+              `INSERT INTO workout_exercises (id, workout_id, exercise_id, sort_order, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              [weId, workoutId, exPlan.exerciseId, eIdx, startedAt, startedAt],
+            );
+
+            // 1. Warmup set
+            const wsWarmupId = `sample_ws_${week}_${day}_${eIdx}_0`;
+            rawDb.runSync(
+              `INSERT INTO workout_sets (id, workout_exercise_id, set_index, set_type, weight_kg, reps, is_completed, created_at, updated_at)
+               VALUES (?, ?, ?, 'warmup', ?, ?, 1, ?, ?)`,
+              [wsWarmupId, weId, 0, exPlan.warmup.weight, exPlan.warmup.reps, startedAt, startedAt],
+            );
+
+            // 2. Working sets
+            for (let sIdx = 0; sIdx < exPlan.working.length; sIdx++) {
+              const setObj = exPlan.working[sIdx];
+              const wsWorkingId = `sample_ws_${week}_${day}_${eIdx}_${sIdx + 1}`;
+              rawDb.runSync(
+                `INSERT INTO workout_sets (id, workout_exercise_id, set_index, set_type, weight_kg, reps, is_completed, created_at, updated_at)
+                 VALUES (?, ?, ?, 'normal', ?, ?, 1, ?, ?)`,
+                [wsWorkingId, weId, sIdx + 1, setObj.weight, setObj.reps, startedAt, startedAt],
+              );
+              workoutVolume += setObj.weight * setObj.reps;
+            }
+          }
+
+          rawDb.runSync(`UPDATE workouts SET total_volume_kg = ? WHERE id = ?`, [
+            workoutVolume,
+            workoutId,
+          ]);
+        }
       }
     }
 

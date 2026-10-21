@@ -24,7 +24,8 @@ import { MuscleDistributionView } from '../../src/ui/charts/MuscleDistributionVi
 import { useWorkoutStore } from '../../src/state/workoutStore';
 import { useTheme } from '../../src/ui/theme/ThemeProvider';
 import { spacing, radii, layout, typography } from '../../src/ui/theme/tokens';
-import { formatDuration, formatWeight } from '../../src/domain/units';
+import { formatDuration, formatWeight, toDisplayWeight } from '../../src/domain/units';
+import { useSettingsStore } from '../../src/state/settingsStore';
 import { lightImpact } from '../../src/lib/haptics';
 import {
   getLifetimeStats,
@@ -40,6 +41,8 @@ import type { CompletedWorkoutSummary } from '../../src/db/queries/workouts';
 export default function HomeScreen() {
   const { theme } = useTheme();
   const { activeWorkout, startWorkout } = useWorkoutStore();
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
+  const weekStart = useSettingsStore((s) => s.weekStart);
 
   const [stats, setStats] = useState<LifetimeStats | null>(null);
   const [heatmapData, setHeatmapData] = useState<ConsistencyHeatmapData | null>(null);
@@ -52,7 +55,7 @@ export default function HomeScreen() {
     try {
       const life = getLifetimeStats();
       setStats(life);
-      const heat = getConsistencyHeatmap(16);
+      const heat = getConsistencyHeatmap(16, weekStart);
       setHeatmapData(heat);
       const vol = getVolumeOverTime(volRange);
       setVolumePoints(vol);
@@ -63,7 +66,7 @@ export default function HomeScreen() {
     } catch (e) {
       console.error('Error loading dashboard stats:', e);
     }
-  }, [volRange]);
+  }, [volRange, weekStart]);
 
   useFocusEffect(
     useCallback(() => {
@@ -180,7 +183,7 @@ export default function HomeScreen() {
             <View style={[styles.statBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Ionicons name="barbell-outline" size={18} color={theme.accent} />
               <Text variant="headingSm" style={{ fontWeight: '800', marginTop: 4 }} tabular>
-                {formatWeight(stats.totalVolumeKg, 'kg')}
+                {formatWeight(stats.totalVolumeKg, weightUnit)}
               </Text>
               <Text variant="caption" color="textMuted">Total Volume</Text>
             </View>
@@ -264,9 +267,9 @@ export default function HomeScreen() {
           />
 
           <LineChart
-            data={volumePoints.map((p) => ({ label: p.label, value: p.volumeKg }))}
+            data={volumePoints.map((p) => ({ label: p.label, value: toDisplayWeight(p.volumeKg, weightUnit) }))}
             height={190}
-            unit="kg"
+            unit={weightUnit}
             emptyMessage="Complete workouts to see your volume curve."
           />
         </View>
@@ -313,7 +316,7 @@ export default function HomeScreen() {
                     {w.title ?? 'Workout'}
                   </Text>
                   <Text variant="caption" color="textMuted" style={{ marginTop: 2 }}>
-                    {formatDate(w.startedAt)} · {formatDuration(w.durationSeconds ?? 0)} · {formatWeight(w.totalVolumeKg ?? 0, 'kg')}
+                    {formatDate(w.startedAt)} · {formatDuration(w.durationSeconds ?? 0)} · {formatWeight(w.totalVolumeKg ?? 0, weightUnit)}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
