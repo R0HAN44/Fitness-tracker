@@ -20,6 +20,12 @@ import { seedExercises } from '../src/db/seed';
 import { seedStarterRoutines } from '../src/db/queries/routines';
 import { seedBuiltinMeasurements } from '../src/db/queries/measurements';
 import { requestNotificationPermissions } from '../src/lib/notifications';
+import { AppState, type AppStateStatus } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { isAppLockConfigured, authenticateAppLock } from '../src/lib/appLock';
+import { Button } from '../src/ui/components/Button';
+import { Text } from '../src/ui/typography/Text';
+import { spacing, radii } from '../src/ui/theme/tokens';
 
 // Keep the splash screen visible until we're ready
 SplashScreen.preventAutoHideAsync();
@@ -101,6 +107,35 @@ export default function RootLayout() {
 /** Inner navigator that has access to the theme context. */
 function RootNavigator() {
   const { theme, isDark } = useTheme();
+  const [isLocked, setIsLocked] = useState(() => isAppLockConfigured());
+
+  const triggerAuth = useCallback(async () => {
+    if (!isAppLockConfigured()) {
+      setIsLocked(false);
+      return;
+    }
+    const success = await authenticateAppLock();
+    if (success) {
+      setIsLocked(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAppLockConfigured()) {
+      triggerAuth();
+    }
+
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        if (isAppLockConfigured()) {
+          setIsLocked(true);
+          triggerAuth();
+        }
+      }
+    });
+
+    return () => sub.remove();
+  }, [triggerAuth]);
 
   return (
     <>
@@ -119,7 +154,46 @@ function RootNavigator() {
         <Stack.Screen name="measurements/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/index" />
         <Stack.Screen name="settings/appearance" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings/import-export" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings/backup-restore" options={{ animation: 'slide_from_right' }} />
       </Stack>
+
+      {isLocked && (
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            styles.lockOverlay,
+            { backgroundColor: theme.background },
+          ]}
+        >
+          <View
+            style={[
+              styles.lockIconWrap,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
+          >
+            <Ionicons name="lock-closed" size={36} color={theme.accent} />
+          </View>
+          <Text variant="headingLg" style={{ fontWeight: '800', marginBottom: spacing.xs }}>
+            Ironlog is Locked
+          </Text>
+          <Text
+            variant="body"
+            color="textMuted"
+            center
+            style={{ marginBottom: spacing['3xl'], paddingHorizontal: spacing.xl }}
+          >
+            Biometric verification is required to access your workouts.
+          </Text>
+          <Button
+            title="Unlock with Biometrics"
+            variant="primary"
+            size="lg"
+            icon={<Ionicons name="finger-print-outline" size={20} color={theme.onAccent} />}
+            onPress={triggerAuth}
+          />
+        </View>
+      )}
     </>
   );
 }
@@ -130,5 +204,19 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  lockOverlay: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 99999,
+  },
+  lockIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.xl,
   },
 });

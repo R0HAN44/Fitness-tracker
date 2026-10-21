@@ -19,6 +19,12 @@ import {
   loadSampleData,
   clearSampleData,
 } from '../../src/db/devSampleData';
+import {
+  isAppLockConfigured,
+  setAppLockConfigured,
+  authenticateAppLock,
+  isBiometricsSupported,
+} from '../../src/lib/appLock';
 
 export default function SettingsScreen() {
   const styles = useStyles();
@@ -26,12 +32,42 @@ export default function SettingsScreen() {
 
   const [sampleDataActive, setSampleDataActive] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
+  const [appLockActive, setAppLockActive] = useState(false);
 
   useEffect(() => {
     if (__DEV__) {
       setSampleDataActive(hasSampleData());
     }
+    setAppLockActive(isAppLockConfigured());
   }, []);
+
+  const handleToggleAppLock = async () => {
+    lightImpact();
+    if (!appLockActive) {
+      const supported = await isBiometricsSupported();
+      const prompt = supported
+        ? 'Scan fingerprint or face to enable App Lock'
+        : 'Authenticate to enable App Lock';
+
+      const success = await authenticateAppLock(prompt);
+      if (success) {
+        setAppLockConfigured(true);
+        setAppLockActive(true);
+        notificationSuccess();
+        Alert.alert('App Lock Enabled', 'Ironlog will require authentication when opened.');
+      } else {
+        Alert.alert('Authentication Failed', 'Could not verify your identity to enable App Lock.');
+      }
+    } else {
+      const success = await authenticateAppLock('Authenticate to disable App Lock');
+      if (success) {
+        setAppLockConfigured(false);
+        setAppLockActive(false);
+        notificationSuccess();
+        Alert.alert('App Lock Disabled', 'Biometric protection turned off.');
+      }
+    }
+  };
 
   const handleLoadSample = () => {
     lightImpact();
@@ -142,11 +178,13 @@ export default function SettingsScreen() {
         <ListRow
           label="Import & Export"
           icon={<Ionicons name="cloud-upload-outline" size={18} color={theme.text} />}
+          onPress={() => router.push('/settings/import-export' as any)}
           showChevron
         />
         <ListRow
           label="Backup & Restore"
           icon={<Ionicons name="save-outline" size={18} color={theme.text} />}
+          onPress={() => router.push('/settings/backup-restore' as any)}
           showChevron
         />
 
@@ -161,8 +199,9 @@ export default function SettingsScreen() {
         />
         <ListRow
           label="App Lock"
-          value="Off"
-          icon={<Ionicons name="lock-closed-outline" size={18} color={theme.text} />}
+          value={appLockActive ? 'On (Biometric)' : 'Off'}
+          icon={<Ionicons name={appLockActive ? "lock-closed" : "lock-open-outline"} size={18} color={appLockActive ? theme.accent : theme.text} />}
+          onPress={handleToggleAppLock}
           showChevron
         />
 

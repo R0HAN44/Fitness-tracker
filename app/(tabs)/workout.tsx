@@ -25,6 +25,10 @@ import {
   type RoutineFolderRow,
 } from '../../src/db/queries/routines';
 import { lightImpact, notificationSuccess } from '../../src/lib/haptics';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
+import { exportRoutineAsJSON, importSharedRoutineJSON } from '../../src/db/queries/exportImport';
 
 export default function WorkoutScreen() {
   const { theme } = useTheme();
@@ -112,6 +116,58 @@ export default function WorkoutScreen() {
     );
   };
 
+  const handleShareRoutine = async (routine: FullRoutine) => {
+    lightImpact();
+    try {
+      const routineJson = exportRoutineAsJSON(routine.id);
+      const filename = `${routine.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_routine.json`;
+      const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+
+      await FileSystem.writeAsStringAsync(fileUri, routineJson, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/json',
+          dialogTitle: `Share ${routine.name}`,
+          UTI: 'public.json',
+        });
+        notificationSuccess();
+      } else {
+        Alert.alert('Sharing Unavailable', `Saved to ${fileUri}`);
+      }
+    } catch (e: any) {
+      Alert.alert('Share Error', e.message || 'Could not export routine.');
+    }
+  };
+
+  const handleImportRoutine = async () => {
+    lightImpact();
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'text/json', 'text/plain', '*/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const fileUri = result.assets[0].uri;
+      const content = await FileSystem.readAsStringAsync(fileUri, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      importSharedRoutineJSON(content);
+      notificationSuccess();
+      reloadRoutines();
+      Alert.alert('Routine Imported', 'The shared routine was successfully added to your templates.');
+    } catch (e: any) {
+      Alert.alert('Import Failed', e.message || 'The selected file is not a valid routine JSON.');
+    }
+  };
+
   const handleOpenMenu = (routine: FullRoutine) => {
     Alert.alert(routine.name, 'Choose an option', [
       { text: 'Cancel', style: 'cancel' },
@@ -125,6 +181,10 @@ export default function WorkoutScreen() {
           setEditingRoutineId(routine.id);
           setShowRoutineEditor(true);
         },
+      },
+      {
+        text: 'Share Routine',
+        onPress: () => handleShareRoutine(routine),
       },
       {
         text: 'Duplicate Routine',
@@ -176,17 +236,26 @@ export default function WorkoutScreen() {
             </Text>
           </View>
 
-          <Button
-            title="New Routine"
-            size="sm"
-            variant="secondary"
-            icon={<Ionicons name="add" size={16} color={theme.text} />}
-            onPress={() => {
-              lightImpact();
-              setEditingRoutineId(null);
-              setShowRoutineEditor(true);
-            }}
-          />
+          <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+            <Button
+              title="Import"
+              size="sm"
+              variant="ghost"
+              icon={<Ionicons name="download-outline" size={16} color={theme.text} />}
+              onPress={handleImportRoutine}
+            />
+            <Button
+              title="New Routine"
+              size="sm"
+              variant="secondary"
+              icon={<Ionicons name="add" size={16} color={theme.text} />}
+              onPress={() => {
+                lightImpact();
+                setEditingRoutineId(null);
+                setShowRoutineEditor(true);
+              }}
+            />
+          </View>
         </View>
 
         {/* Folder Filter Chips */}
